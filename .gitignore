@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+*.log
+*.lock
+dist/
+.DS_Store
+
+# Nunca versionar credenciais ou estado de runtime
+auth.json
+auth.json.bak.*
+anthropic-plugin.json
+*.lock

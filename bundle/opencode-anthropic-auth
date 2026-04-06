@@ -1,0 +1,1349 @@
+#!/usr/bin/env node
+
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { randomBytes, createHash } from "node:crypto";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const HOME = homedir();
+const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const SCRIPT_DIR = dirname(SCRIPT_PATH);
+const AUTH_PATH = join(HOME, ".local", "share", "opencode", "auth.json");
+const BACKUP_PATH = join(HOME, ".local", "share", "opencode", "auth.json.bak.before-opencode-anthropic-auth");
+const PLUGIN_CONFIG_PATH = join(HOME, ".local", "share", "opencode", "anthropic-plugin.json");
+const CRON_LOCK_PATH = join(HOME, ".local", "state", "opencode", "anthropic-auth-cron.lock");
+const CONFIG_DIR = join(HOME, ".config", "opencode");
+const PLUGINS_DIR = join(CONFIG_DIR, "plugins");
+const OPENCODE_CONFIG_PATH = join(CONFIG_DIR, "opencode.json");
+const HOME_BIN_DIR = join(HOME, "bin");
+const LOCAL_BIN_DIR = join(HOME, ".local", "bin");
+const DEFAULT_BUNDLE_DIR = join(HOME_BIN_DIR, "opencode-auth-bundle");
+const HELPER_NAME = "opencode-anthropic-auth";
+const ANTHROPIC_PLUGIN_NAME = "opencode-anthropic-auth-patched.mjs";
+const GPT54_PLUGIN_NAME = "openai-gpt54-oauth.ts";
+const CONFIG_SCHEMA_URL = "https://opencode.ai/config.json";
+const HELPER_INSTALL_MODE = 0o755;
+const FILE_INSTALL_MODE = 0o644;
+const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const CALLBACK_URL = "https://platform.claude.com/oauth/code/callback";
+const TOKEN_ENDPOINTS = [
+  "https://platform.claude.com/v1/oauth/token",
+  "https://console.anthropic.com/v1/oauth/token",
+];
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
+const OAUTH_REFRESH_WINDOW_MS = 60 * 60 * 1000;
+const CRON_LOCK_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_PLUGIN_CONFIG = Object.freeze({
+  schemaVersion: 1,
+  betaHeaders: ["oauth-2025-04-20", "interleaved-thinking-2025-05-14"],
+  userAgent: "claude-cli/2.1.2 (external, cli)",
+});
+const FETCH_TIMEOUT_MS = 15000;
+const UPSTREAM_SOURCES = Object.freeze([
+  "https://docs.anthropic.com/en/api/beta-headers",
+  "https://docs.anthropic.com/en/release-notes/api",
+  "https://docs.anthropic.com/en/release-notes/claude-code",
+]);
+const SOURCE_URLS = Object.freeze({
+  betaHeaders: UPSTREAM_SOURCES[0],
+  apiReleaseNotes: UPSTREAM_SOURCES[1],
+  claudeCodeReleaseNotes: UPSTREAM_SOURCES[2],
+});
+const PLUGIN_INSERT_MARKERS = Object.freeze([
+  "oh-my-opencode@latest",
+  "oh-my-openagent@latest",
+]);
+
+function printUsage() {
+  console.log(`OpenCode Anthropic Auth Helper
+
+Usage:
+  opencode-anthropic-auth <command> [options]
+  opencode-anthropic-auth help [command]
+
+Core commands:
+  bootstrap [bundle-dir]                 Install/sync helper + plugins and patch opencode.json
+  sync [bundle-dir]                      Alias for bootstrap
+  cron-run [bundle-dir]                  Non-interactive maintenance for cron/launchd/systemd
+  doctor                                 Show auth status, plugin config, and upstream sources
+  upstream-check                         Compare local config with Anthropic upstream signals
+
+Auth commands:
+  status                                 Show current Anthropic auth mode and expiry
+  oauth-url                              Generate Claude OAuth URL
+  oauth-exchange <code#state|url>        Store OAuth credentials from browser callback
+  oauth-refresh                          Refresh stored OAuth credentials now
+  api <anthropic-api-key>                Switch provider auth to manual API key mode
+
+Plugin config commands:
+  plugin-config                          Show shared runtime config consumed by the plugin
+  plugin-set-betas <csv|none>            Set anthropic-beta headers without editing plugin code
+  plugin-set-user-agent <ua|default>     Set spoofed claude-cli User-Agent
+  plugin-reset                           Reset plugin config to safe defaults
+  sources                                Show official upstream URLs monitored by the helper
+
+Quick start:
+  1. Copy the bundle to another machine:
+     scp -r ~/bin/opencode-auth-bundle user@host:~/opencode-auth-bundle
+  2. Portable install on the target machine:
+     opencode-anthropic-auth bootstrap ~/opencode-auth-bundle
+     or: node ~/opencode-auth-bundle/install.mjs
+  3. Login via OAuth:
+     opencode-anthropic-auth oauth-url
+     opencode-anthropic-auth oauth-exchange "code#state"
+  4. Verify everything:
+     opencode-anthropic-auth doctor
+  5. Safe scheduled maintenance:
+     opencode-anthropic-auth cron-run ~/opencode-auth-bundle
+
+Examples:
+  opencode-anthropic-auth help cron-run
+  opencode-anthropic-auth help examples
+  opencode-anthropic-auth help drift
+  opencode-anthropic-auth plugin-set-user-agent "claude-cli/2.1.81 (external, cli)"
+  opencode-anthropic-auth plugin-set-betas "oauth-2025-04-20,interleaved-thinking-2025-05-14"
+
+Notes:
+  - bootstrap writes helper binaries, plugins, opencode.json entries, and anthropic-plugin.json
+  - cron-run refreshes OAuth only near expiry, auto-updates stale user-agent, and reports beta-header drift
+  - beta headers are intentionally report-only in cron-run; they are not auto-changed
+  - use 'help <command>' for command-specific guidance
+`);
+}
+
+function printCommandHelp(command) {
+  const commandHelp = {
+    bootstrap: `bootstrap [bundle-dir]
+
+Installs or re-syncs the helper and plugin bundle on the current machine.
+
+What it does:
+  - locates the bundle directory
+  - installs/syncs helper into ~/.local/bin and/or ~/bin when relevant
+  - copies plugins into ~/.config/opencode/plugins/
+  - patches ~/.config/opencode/opencode.json
+  - initializes ~/.local/share/opencode/anthropic-plugin.json
+
+Typical usage:
+  opencode-anthropic-auth bootstrap ~/opencode-auth-bundle
+
+Notes:
+  - safe to run multiple times
+  - 'sync' is an alias for this command
+`,
+    sync: `sync [bundle-dir]
+
+Alias for 'bootstrap'.
+`,
+    "cron-run": `cron-run [bundle-dir]
+
+Runs unattended maintenance safely for cron, launchd, or systemd timers.
+
+What it does:
+  - runs bootstrap/sync first
+  - refreshes OAuth only when expiry is within 1 hour
+  - checks Anthropic upstream sources
+  - auto-updates stale claude-cli user-agent version
+  - reports beta-header drift without auto-changing beta headers
+  - uses an internal lockfile to skip overlapping executions
+
+Typical usage:
+  opencode-anthropic-auth cron-run ~/opencode-auth-bundle
+
+Cron example:
+  0 */6 * * * $HOME/.local/bin/opencode-anthropic-auth cron-run $HOME/opencode-auth-bundle >> $HOME/.local/state/opencode/anthropic-auth-cron.log 2>&1
+`,
+    doctor: `doctor
+
+Prints the current auth state, shared plugin config, and official upstream URLs.
+
+Typical usage:
+  opencode-anthropic-auth doctor
+`,
+    "upstream-check": `upstream-check
+
+Fetches official Anthropic sources and compares them with local plugin config.
+
+Checks:
+  - stale claude-cli user-agent version
+  - whether configured beta headers still appear in docs/release notes
+
+Typical usage:
+  opencode-anthropic-auth upstream-check
+`,
+    status: `status
+
+Shows whether Anthropic is configured in API mode or OAuth mode and, when OAuth is active, whether the token is expired.
+`,
+    "oauth-url": `oauth-url
+
+Generates the browser login URL for Claude OAuth.
+
+Typical usage:
+  opencode-anthropic-auth oauth-url
+`,
+    "oauth-exchange": `oauth-exchange <code#state|callback-url>
+
+Stores OAuth credentials locally in auth.json using the browser callback payload.
+
+Typical usage:
+  opencode-anthropic-auth oauth-exchange "code#state"
+`,
+    "oauth-refresh": `oauth-refresh
+
+Refreshes the stored OAuth credentials immediately.
+`,
+    api: `api <anthropic-api-key>
+
+Stores a manual Anthropic API key in auth.json and switches auth mode to API key.
+`,
+    "plugin-config": `plugin-config
+
+Shows the shared runtime config consumed by the Anthropic plugin.
+`,
+    "plugin-set-betas": `plugin-set-betas <csv|none>
+
+Sets the anthropic-beta headers in the shared plugin config.
+
+Examples:
+  opencode-anthropic-auth plugin-set-betas "oauth-2025-04-20,interleaved-thinking-2025-05-14"
+  opencode-anthropic-auth plugin-set-betas none
+`,
+    "plugin-set-user-agent": `plugin-set-user-agent <ua|default>
+
+Sets the spoofed claude-cli User-Agent in the shared plugin config.
+
+Example:
+  opencode-anthropic-auth plugin-set-user-agent "claude-cli/2.1.81 (external, cli)"
+`,
+    "plugin-reset": `plugin-reset
+
+Resets the shared plugin config back to built-in defaults.
+`,
+    sources: `sources
+
+Prints the official Anthropic URLs monitored by upstream-check and cron-run.
+`,
+    auth: `auth
+
+Common authentication flows.
+
+OAuth login:
+  opencode-anthropic-auth oauth-url
+  opencode-anthropic-auth oauth-exchange "code#state"
+  opencode-anthropic-auth status
+
+Manual refresh:
+  opencode-anthropic-auth oauth-refresh
+
+API key mode:
+  opencode-anthropic-auth api "$ANTHROPIC_API_KEY"
+  opencode-anthropic-auth status
+
+Use this topic when you need to switch or repair local Anthropic auth.
+`,
+    cron: `cron
+
+Recommended unattended maintenance workflow.
+
+Main command:
+  opencode-anthropic-auth cron-run ~/opencode-auth-bundle
+
+What cron-run does:
+  - syncs the bundle first
+  - refreshes OAuth only when expiry is within 1 hour
+  - updates stale claude-cli user-agent automatically
+  - reports beta-header drift for manual review
+  - skips overlapping runs using an internal lockfile
+
+Cron example:
+  0 */6 * * * $HOME/.local/bin/opencode-anthropic-auth cron-run $HOME/opencode-auth-bundle >> $HOME/.local/state/opencode/anthropic-auth-cron.log 2>&1
+
+Install cron entry:
+  (crontab -l 2>/dev/null; echo '0 */6 * * * $HOME/.local/bin/opencode-anthropic-auth cron-run $HOME/opencode-auth-bundle >> $HOME/.local/state/opencode/anthropic-auth-cron.log 2>&1') | crontab -
+
+Lock path:
+  ~/.local/state/opencode/anthropic-auth-cron.lock
+`,
+    drift: `drift
+
+How to interpret and respond to upstream drift.
+
+Check drift now:
+  opencode-anthropic-auth upstream-check
+
+What drift usually means:
+  - stale user-agent: local claude-cli version is behind upstream
+  - beta header mentioned outside beta docs: feature may be transitioning or moving to GA
+  - beta header not found: verify whether the header was removed, renamed, or is no longer required
+
+Recommended response:
+  1. run: opencode-anthropic-auth upstream-check
+  2. if user-agent is stale, update it with:
+     opencode-anthropic-auth plugin-set-user-agent "claude-cli/<latest> (external, cli)"
+  3. if beta headers look stale, review the official Anthropic docs before changing them
+  4. run: opencode-anthropic-auth doctor
+
+Important:
+  - cron-run auto-updates user-agent only
+  - beta headers stay manual by design
+`,
+    troubleshooting: `troubleshooting
+
+Common recovery flows.
+
+1. Helper or plugin seems out of sync:
+   opencode-anthropic-auth bootstrap ~/opencode-auth-bundle
+
+2. OAuth expired or failing:
+   opencode-anthropic-auth status
+   opencode-anthropic-auth oauth-refresh
+
+3. Need to re-login completely:
+   opencode-anthropic-auth oauth-url
+   opencode-anthropic-auth oauth-exchange "code#state"
+
+4. Suspect bad runtime config:
+   opencode-anthropic-auth plugin-config
+   opencode-anthropic-auth plugin-reset
+
+5. Investigate upstream changes:
+   opencode-anthropic-auth upstream-check
+   opencode-anthropic-auth sources
+
+6. Validate final state:
+   opencode-anthropic-auth doctor
+
+If cron-run says another instance is active:
+  - wait for the current run to finish, or
+  - inspect/remove the lock only if you are sure no run is active:
+    ~/.local/state/opencode/anthropic-auth-cron.lock
+`,
+    examples: `examples
+
+Portable copy to another machine:
+  scp -r ~/bin/opencode-auth-bundle user@host:~/opencode-auth-bundle
+
+Portable install:
+  node ~/opencode-auth-bundle/install.mjs
+
+Direct bootstrap:
+  opencode-anthropic-auth bootstrap ~/opencode-auth-bundle
+
+OAuth login after install:
+  opencode-anthropic-auth oauth-url
+  opencode-anthropic-auth oauth-exchange "code#state"
+  opencode-anthropic-auth doctor
+
+Install cron maintenance:
+  (crontab -l 2>/dev/null; echo '0 */6 * * * $HOME/.local/bin/opencode-anthropic-auth cron-run $HOME/opencode-auth-bundle >> $HOME/.local/state/opencode/anthropic-auth-cron.log 2>&1') | crontab -
+
+Full local diagnosis:
+  opencode-anthropic-auth doctor
+
+Upstream drift check:
+  opencode-anthropic-auth upstream-check
+
+Update user-agent manually:
+  opencode-anthropic-auth plugin-set-user-agent "claude-cli/2.1.81 (external, cli)"
+
+Clear beta headers temporarily:
+  opencode-anthropic-auth plugin-set-betas none
+
+Restore safe defaults:
+  opencode-anthropic-auth plugin-reset
+`,
+  };
+
+  const helpText = commandHelp[command];
+  if (!helpText) {
+    throw new Error(`Unknown help topic: ${command}`);
+  }
+
+  console.log(helpText);
+}
+
+function ensureParent(path) {
+  mkdirSync(dirname(path), { recursive: true });
+}
+
+function loadAuth() {
+  ensureParent(AUTH_PATH);
+  if (!existsSync(AUTH_PATH)) {
+    return {};
+  }
+  return JSON.parse(readFileSync(AUTH_PATH, "utf8"));
+}
+
+function backupAuth() {
+  if (existsSync(AUTH_PATH) && !existsSync(BACKUP_PATH)) {
+    ensureParent(BACKUP_PATH);
+    copyFileSync(AUTH_PATH, BACKUP_PATH);
+  }
+}
+
+function saveAuth(auth) {
+  backupAuth();
+  ensureParent(AUTH_PATH);
+  writeFileSync(AUTH_PATH, JSON.stringify(auth, null, 2) + "\n");
+}
+
+function writeJsonAtomic(path, value, mode = 0o600) {
+  ensureParent(path);
+  const temporaryPath = `${path}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(temporaryPath, JSON.stringify(value, null, 2) + "\n", { mode });
+  chmodSync(temporaryPath, mode);
+  renameSync(temporaryPath, path);
+  chmodSync(path, mode);
+}
+
+function normalizePluginConfig(rawConfig) {
+  const schemaVersion = rawConfig?.schemaVersion === DEFAULT_PLUGIN_CONFIG.schemaVersion
+    ? rawConfig.schemaVersion
+    : DEFAULT_PLUGIN_CONFIG.schemaVersion;
+  const betaHeaders = Array.isArray(rawConfig?.betaHeaders)
+    ? rawConfig.betaHeaders
+      .filter((value) => typeof value === "string")
+      .map((value) => value.trim())
+      .filter(Boolean)
+    : DEFAULT_PLUGIN_CONFIG.betaHeaders;
+  const userAgent = typeof rawConfig?.userAgent === "string" && rawConfig.userAgent.trim()
+    ? rawConfig.userAgent.trim()
+    : DEFAULT_PLUGIN_CONFIG.userAgent;
+
+  return {
+    schemaVersion,
+    betaHeaders,
+    userAgent,
+  };
+}
+
+function loadPluginConfig() {
+  ensureParent(PLUGIN_CONFIG_PATH);
+  if (!existsSync(PLUGIN_CONFIG_PATH)) {
+    return normalizePluginConfig({});
+  }
+  return normalizePluginConfig(JSON.parse(readFileSync(PLUGIN_CONFIG_PATH, "utf8")));
+}
+
+function savePluginConfig(config) {
+  writeJsonAtomic(PLUGIN_CONFIG_PATH, normalizePluginConfig(config));
+}
+
+function parseBetaHeaders(input) {
+  if (!input) {
+    throw new Error("Provide beta headers as comma-separated values or 'none'.");
+  }
+
+  if (input === "none") {
+    return [];
+  }
+
+  const betaHeaders = input
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (betaHeaders.length === 0) {
+    throw new Error("No valid beta headers were provided.");
+  }
+
+  return betaHeaders;
+}
+
+function printPluginConfig() {
+  const config = loadPluginConfig();
+  console.log(`Plugin config: ${PLUGIN_CONFIG_PATH}`);
+  console.log(`Schema version: ${config.schemaVersion}`);
+  console.log(`Beta headers: ${config.betaHeaders.length ? config.betaHeaders.join(", ") : "(none)"}`);
+  console.log(`User-Agent: ${config.userAgent}`);
+}
+
+function setPluginBetas(input) {
+  const config = loadPluginConfig();
+  config.betaHeaders = parseBetaHeaders(input);
+  savePluginConfig(config);
+  printPluginConfig();
+}
+
+function setPluginUserAgent(input) {
+  if (!input) {
+    throw new Error("Provide a user-agent string or 'default'.");
+  }
+
+  const config = loadPluginConfig();
+  config.userAgent = input === "default" ? DEFAULT_PLUGIN_CONFIG.userAgent : input.trim();
+  if (!config.userAgent) {
+    throw new Error("User-Agent cannot be empty.");
+  }
+  savePluginConfig(config);
+  printPluginConfig();
+}
+
+function resetPluginConfig() {
+  savePluginConfig(DEFAULT_PLUGIN_CONFIG);
+  printPluginConfig();
+}
+
+function printSources() {
+  console.log("Track these official sources:");
+  for (const source of UPSTREAM_SOURCES) {
+    console.log(`- ${source}`);
+  }
+}
+
+function printDoctor() {
+  printStatus();
+  console.log("");
+  printPluginConfig();
+  console.log("");
+  printSources();
+}
+
+function readJson(filePath) {
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function getPathEntries() {
+  return (process.env.PATH || "")
+    .split(":")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function resolvePreferredBinDir() {
+  const candidates = [LOCAL_BIN_DIR, HOME_BIN_DIR];
+  const pathEntries = getPathEntries();
+  const pathMatch = candidates.find((candidate) => pathEntries.includes(candidate));
+  if (pathMatch) {
+    return pathMatch;
+  }
+
+  const existing = candidates.find((candidate) => existsSync(candidate));
+  return existing ?? HOME_BIN_DIR;
+}
+
+function resolveManagedBinDirs() {
+  const preferred = resolvePreferredBinDir();
+  const pathEntries = getPathEntries();
+
+  return unique([
+    preferred,
+    ...[HOME_BIN_DIR, LOCAL_BIN_DIR].filter((candidate) => (
+      candidate === preferred
+      || pathEntries.includes(candidate)
+      || existsSync(join(candidate, HELPER_NAME))
+    )),
+  ]);
+}
+
+function buildManagedPaths(binDir) {
+  const helperPath = join(binDir, HELPER_NAME);
+  const anthropicPluginPath = join(PLUGINS_DIR, ANTHROPIC_PLUGIN_NAME);
+  const gpt54PluginPath = join(PLUGINS_DIR, GPT54_PLUGIN_NAME);
+
+  return {
+    helperPath,
+    anthropicPluginPath,
+    gpt54PluginPath,
+    anthropicPluginUri: pathToFileURL(anthropicPluginPath).toString(),
+    gpt54PluginUri: pathToFileURL(gpt54PluginPath).toString(),
+  };
+}
+
+function isBundleDir(bundleDir) {
+  return existsSync(join(bundleDir, HELPER_NAME))
+    && existsSync(join(bundleDir, ANTHROPIC_PLUGIN_NAME));
+}
+
+function resolveBundleDir(bundleDirArg) {
+  const candidates = unique([
+    bundleDirArg,
+    process.env.OPENCODE_AUTH_BUNDLE_DIR,
+    SCRIPT_DIR,
+    DEFAULT_BUNDLE_DIR,
+  ]);
+
+  const match = candidates.find((candidate) => isBundleDir(candidate));
+  if (!match) {
+    throw new Error(
+      "Could not locate the auth bundle directory. Provide [bundle-dir] or set OPENCODE_AUTH_BUNDLE_DIR.",
+    );
+  }
+
+  return match;
+}
+
+function copyIntoPlace(sourcePath, targetPath, mode) {
+  if (!existsSync(sourcePath)) {
+    return false;
+  }
+
+  if (sourcePath !== targetPath) {
+    ensureParent(targetPath);
+    copyFileSync(sourcePath, targetPath);
+  }
+
+  chmodSync(targetPath, mode);
+  return true;
+}
+
+function removeManagedPlugins(plugins, managedPaths) {
+  return plugins.filter((plugin) => {
+    if (typeof plugin !== "string") {
+      return true;
+    }
+
+    return ![
+      "opencode-anthropic-auth@latest",
+      managedPaths.anthropicPluginUri,
+      managedPaths.gpt54PluginUri,
+    ].includes(plugin)
+      && !plugin.endsWith(`/${ANTHROPIC_PLUGIN_NAME}`)
+      && !plugin.endsWith(`/${GPT54_PLUGIN_NAME}`);
+  });
+}
+
+function insertAfterAny(plugins, markers, value) {
+  if (plugins.includes(value)) {
+    return plugins;
+  }
+
+  for (const marker of markers) {
+    const index = plugins.indexOf(marker);
+    if (index !== -1) {
+      return [
+        ...plugins.slice(0, index + 1),
+        value,
+        ...plugins.slice(index + 1),
+      ];
+    }
+  }
+
+  return [value, ...plugins];
+}
+
+function appendIfMissing(plugins, value) {
+  if (plugins.includes(value)) {
+    return plugins;
+  }
+
+  return [...plugins, value];
+}
+
+function patchOpencodeConfig({ managedPaths, hasGptPlugin }) {
+  const config = existsSync(OPENCODE_CONFIG_PATH)
+    ? readJson(OPENCODE_CONFIG_PATH)
+    : { $schema: CONFIG_SCHEMA_URL };
+  const currentPlugins = Array.isArray(config.plugin) ? config.plugin : [];
+
+  let nextPlugins = removeManagedPlugins(currentPlugins, managedPaths);
+  nextPlugins = insertAfterAny(nextPlugins, PLUGIN_INSERT_MARKERS, managedPaths.anthropicPluginUri);
+  if (hasGptPlugin) {
+    nextPlugins = appendIfMissing(nextPlugins, managedPaths.gpt54PluginUri);
+  }
+
+  config.plugin = nextPlugins;
+  if (!config.$schema) {
+    config.$schema = CONFIG_SCHEMA_URL;
+  }
+
+  writeJsonAtomic(OPENCODE_CONFIG_PATH, config, FILE_INSTALL_MODE);
+}
+
+function ensurePluginRuntimeConfig() {
+  savePluginConfig(loadPluginConfig());
+}
+
+function printPathHint(binDir) {
+  if (!getPathEntries().includes(binDir)) {
+    console.log(`PATH note: add ${binDir} to your PATH if it is not already exported.`);
+  }
+}
+
+function bootstrapBundle(bundleDirArg) {
+  const bundleDir = resolveBundleDir(bundleDirArg);
+  const binDirs = resolveManagedBinDirs();
+  const managedPaths = buildManagedPaths(binDirs[0]);
+  const helperSourcePath = join(bundleDir, HELPER_NAME);
+  const helperInstalled = binDirs.every((binDir) => copyIntoPlace(
+    helperSourcePath,
+    join(binDir, HELPER_NAME),
+    HELPER_INSTALL_MODE,
+  ));
+  const anthropicInstalled = copyIntoPlace(
+    join(bundleDir, ANTHROPIC_PLUGIN_NAME),
+    managedPaths.anthropicPluginPath,
+    FILE_INSTALL_MODE,
+  );
+  const gptInstalled = copyIntoPlace(
+    join(bundleDir, GPT54_PLUGIN_NAME),
+    managedPaths.gpt54PluginPath,
+    FILE_INSTALL_MODE,
+  );
+
+  if (!helperInstalled || !anthropicInstalled) {
+    throw new Error("Bundle is missing required Anthropic auth artifacts.");
+  }
+
+  ensurePluginRuntimeConfig();
+  patchOpencodeConfig({ managedPaths, hasGptPlugin: gptInstalled });
+
+  return {
+    bundleDir,
+    binDirs,
+    managedPaths,
+    gptInstalled,
+  };
+}
+
+function printBootstrapSummary(result) {
+  console.log("OpenCode auth bootstrap completed");
+  console.log(`- bundle: ${result.bundleDir}`);
+  console.log(`- helper(s): ${result.binDirs.map((binDir) => join(binDir, HELPER_NAME)).join(", ")}`);
+  console.log(`- Anthropic plugin: ${result.managedPaths.anthropicPluginPath}`);
+  if (result.gptInstalled) {
+    console.log(`- GPT-5.4 plugin: ${result.managedPaths.gpt54PluginPath}`);
+  }
+  console.log(`- Config patched: ${OPENCODE_CONFIG_PATH}`);
+  console.log(`- Plugin config: ${PLUGIN_CONFIG_PATH}`);
+  for (const binDir of result.binDirs) {
+    printPathHint(binDir);
+  }
+}
+
+function getAnthropicAuth() {
+  const auth = loadAuth();
+  return auth.anthropic;
+}
+
+function shouldRefreshOauth(auth) {
+  return Boolean(
+    auth
+    && auth.type === "oauth"
+    && auth.refresh
+    && typeof auth.expires === "number"
+    && auth.expires <= Date.now() + OAUTH_REFRESH_WINDOW_MS,
+  );
+}
+
+function buildUpdatedUserAgent(currentUserAgent, latestVersion) {
+  if (!latestVersion) {
+    return currentUserAgent;
+  }
+
+  if (/claude-cli\/\d+\.\d+\.\d+/i.test(currentUserAgent)) {
+    return currentUserAgent.replace(/claude-cli\/\d+\.\d+\.\d+/i, `claude-cli/${latestVersion}`);
+  }
+
+  return `claude-cli/${latestVersion} (external, cli)`;
+}
+
+function readLockTimestamp() {
+  try {
+    if (!existsSync(CRON_LOCK_PATH)) {
+      return null;
+    }
+
+    const timestamp = Number.parseInt(readFileSync(CRON_LOCK_PATH, "utf8").trim(), 10);
+    return Number.isFinite(timestamp) ? timestamp : null;
+  } catch {
+    return null;
+  }
+}
+
+function acquireCronLock() {
+  ensureParent(CRON_LOCK_PATH);
+  const existingTimestamp = readLockTimestamp();
+  if (existingTimestamp && existingTimestamp < Date.now() - CRON_LOCK_TTL_MS) {
+    unlinkSync(CRON_LOCK_PATH);
+  }
+
+  try {
+    writeFileSync(CRON_LOCK_PATH, `${Date.now()}\n`, {
+      mode: 0o600,
+      flag: "wx",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseCronLock() {
+  if (existsSync(CRON_LOCK_PATH)) {
+    unlinkSync(CRON_LOCK_PATH);
+  }
+}
+
+async function collectUpstreamData() {
+  const config = loadPluginConfig();
+  const [betaHeadersRaw, apiNotesRaw, claudeCodeRaw] = await Promise.all([
+    fetchText(SOURCE_URLS.betaHeaders),
+    fetchText(SOURCE_URLS.apiReleaseNotes),
+    fetchText(SOURCE_URLS.claudeCodeReleaseNotes),
+  ]);
+
+  const betaHeadersText = stripHtml(betaHeadersRaw);
+  const apiReleaseNotesText = stripHtml(apiNotesRaw);
+  const claudeCodeText = stripHtml(claudeCodeRaw);
+
+  return {
+    config,
+    latestClaudeVersion: extractLatestClaudeCliVersion(claudeCodeRaw)
+      ?? extractLatestClaudeCliVersion(claudeCodeText),
+    betaHeaderResults: analyzeBetaHeaders(config, betaHeadersText, apiReleaseNotesText),
+  };
+}
+
+async function runCron(bundleDirArg) {
+  if (!acquireCronLock()) {
+    console.log("cron-run skipped: another instance is active");
+    return;
+  }
+
+  try {
+  const bootstrap = bootstrapBundle(bundleDirArg);
+  const actions = ["bundle synced"];
+  const anthropic = getAnthropicAuth();
+
+  if (shouldRefreshOauth(anthropic)) {
+    await oauthRefresh();
+    actions.push("oauth refreshed");
+  } else if (anthropic?.type === "oauth") {
+    actions.push("oauth refresh not needed");
+  } else {
+    actions.push("oauth refresh skipped (not in oauth mode)");
+  }
+
+  const upstream = await collectUpstreamData();
+  const currentUserAgentVersion = extractUserAgentVersion(upstream.config.userAgent);
+  if (
+    upstream.latestClaudeVersion
+    && currentUserAgentVersion
+    && compareVersions(currentUserAgentVersion, upstream.latestClaudeVersion) < 0
+  ) {
+    const nextConfig = {
+      ...upstream.config,
+      userAgent: buildUpdatedUserAgent(upstream.config.userAgent, upstream.latestClaudeVersion),
+    };
+    savePluginConfig(nextConfig);
+    actions.push(`user-agent updated to ${nextConfig.userAgent}`);
+    upstream.config = nextConfig;
+  } else {
+    actions.push("user-agent already aligned or could not be compared");
+  }
+
+  console.log("Cron maintenance summary:");
+  for (const action of actions) {
+    console.log(`- ${action}`);
+  }
+  console.log("");
+  printBootstrapSummary(bootstrap);
+  console.log("");
+  printUserAgentAnalysis(upstream.config, upstream.latestClaudeVersion);
+  console.log("");
+  printBetaHeaderAnalysis(upstream.betaHeaderResults);
+  } finally {
+    releaseCronLock();
+  }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripHtml(value) {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchText(url) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "user-agent": "opencode-anthropic-auth/1.0",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return await response.text();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function getSnippet(text, term, radius = 140) {
+  const lowerText = text.toLowerCase();
+  const lowerTerm = term.toLowerCase();
+  const index = lowerText.indexOf(lowerTerm);
+
+  if (index === -1) {
+    return null;
+  }
+
+  const start = Math.max(0, index - radius);
+  const end = Math.min(text.length, index + term.length + radius);
+  return text.slice(start, end).replace(/\s+/g, " ").trim();
+}
+
+function extractLatestClaudeCliVersion(text) {
+  const patterns = [
+    /##\s+(\d+\.\d+\.\d+)\b/,
+    /(?:^|\s)(\d+\.\d+\.\d+)\s*-\s+/,
+    /claude-cli\/(\d+\.\d+\.\d+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
+function extractUserAgentVersion(userAgent) {
+  const match = userAgent.match(/claude-cli\/(\d+\.\d+\.\d+)/i);
+  return match?.[1] ?? null;
+}
+
+function compareVersions(left, right) {
+  const leftParts = left.split(".").map((part) => Number.parseInt(part, 10));
+  const rightParts = right.split(".").map((part) => Number.parseInt(part, 10));
+  const length = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const leftValue = leftParts[index] ?? 0;
+    const rightValue = rightParts[index] ?? 0;
+    if (leftValue > rightValue) return 1;
+    if (leftValue < rightValue) return -1;
+  }
+
+  return 0;
+}
+
+function analyzeBetaHeaders(config, betaHeadersText, apiReleaseNotesText) {
+  return config.betaHeaders.map((header) => {
+    const exactRegex = new RegExp(`\\b${escapeRegExp(header)}\\b`, "i");
+    const featureName = header.replace(/-\d{4}-\d{2}-\d{2}$/, "");
+    const featureRegex = new RegExp(`\\b${escapeRegExp(featureName)}\\b`, "i");
+    const inBetaDocs = exactRegex.test(betaHeadersText);
+    const inApiNotes = exactRegex.test(apiReleaseNotesText);
+    const featureMention = featureRegex.test(apiReleaseNotesText);
+    const betaSnippet = getSnippet(betaHeadersText, header);
+    const apiSnippet = getSnippet(apiReleaseNotesText, header) || getSnippet(apiReleaseNotesText, featureName);
+    const gaHint = apiSnippet
+      ? /(generally available|no longer required|transition period|public beta)/i.test(apiSnippet)
+      : false;
+
+    return {
+      header,
+      inBetaDocs,
+      inApiNotes,
+      featureMention,
+      gaHint,
+      betaSnippet,
+      apiSnippet,
+    };
+  });
+}
+
+function printUserAgentAnalysis(config, latestClaudeVersion) {
+  const configuredVersion = extractUserAgentVersion(config.userAgent);
+  console.log("User-Agent drift:");
+  console.log(`- configured: ${config.userAgent}`);
+  console.log(`- latest Claude Code release seen: ${latestClaudeVersion ?? "not detected"}`);
+
+  if (!configuredVersion || !latestClaudeVersion) {
+    console.log("- status: manual review needed (could not compare versions)");
+    return;
+  }
+
+  const comparison = compareVersions(configuredVersion, latestClaudeVersion);
+  if (comparison < 0) {
+    console.log(`- status: stale (local ${configuredVersion} < upstream ${latestClaudeVersion})`);
+  } else if (comparison === 0) {
+    console.log("- status: aligned with latest detected Claude Code version");
+  } else {
+    console.log(`- status: ahead of detected upstream version (local ${configuredVersion})`);
+  }
+}
+
+function printBetaHeaderAnalysis(results) {
+  console.log("Beta header drift:");
+
+  if (results.length === 0) {
+    console.log("- no beta headers configured");
+    return;
+  }
+
+  for (const result of results) {
+    const status = result.inBetaDocs
+      ? "documented"
+      : result.inApiNotes || result.featureMention
+        ? "mentioned outside beta doc"
+        : "not found";
+
+    console.log(`- ${result.header}: ${status}`);
+    if (result.gaHint) {
+      console.log("  note: release notes mention GA/transition wording; verify whether this beta is still required");
+    }
+    if (result.betaSnippet) {
+      console.log(`  beta-docs: ${result.betaSnippet}`);
+    } else if (result.apiSnippet) {
+      console.log(`  api-notes: ${result.apiSnippet}`);
+    }
+  }
+}
+
+async function runUpstreamCheck() {
+  console.log(`Using plugin config: ${PLUGIN_CONFIG_PATH}`);
+  const upstream = await collectUpstreamData();
+
+  console.log("Sources fetched successfully:");
+  printSources();
+  console.log("");
+
+  printUserAgentAnalysis(upstream.config, upstream.latestClaudeVersion);
+  console.log("");
+  printBetaHeaderAnalysis(upstream.betaHeaderResults);
+}
+
+function base64Url(buffer) {
+  return buffer
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function generateVerifier() {
+  return base64Url(randomBytes(64));
+}
+
+function generateChallenge(verifier) {
+  return base64Url(createHash("sha256").update(verifier).digest());
+}
+
+function buildOauthUrl() {
+  const verifier = generateVerifier();
+  const url = new URL("https://claude.ai/oauth/authorize");
+  url.searchParams.set("code", "true");
+  url.searchParams.set("client_id", CLIENT_ID);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("redirect_uri", CALLBACK_URL);
+  url.searchParams.set("scope", "org:create_api_key user:profile user:inference");
+  url.searchParams.set("code_challenge", generateChallenge(verifier));
+  url.searchParams.set("code_challenge_method", "S256");
+  url.searchParams.set("state", verifier);
+  return url.toString();
+}
+
+function normalizePastedInput(input) {
+  const trimmed = input.trim().replace(/\s+/g, "");
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  const url = new URL(trimmed);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state") || url.hash.replace(/^#/, "");
+  if (!code || !state) {
+    throw new Error("Could not extract code and state from callback URL.");
+  }
+  return `${code}#${state}`;
+}
+
+async function parseError(response) {
+  const text = await response.text();
+  try {
+    const json = JSON.parse(text);
+    return json?.error_description || json?.error?.message || text;
+  } catch {
+    return text || response.statusText;
+  }
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function exchangeWithRetry(endpoint, payload) {
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.ok) {
+      return { ok: true, json: await response.json(), endpoint };
+    }
+
+    const message = await parseError(response);
+    const retryAfterHeader = response.headers.get("retry-after");
+    const retryAfterSeconds = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) : Number.NaN;
+    const retryDelay = Number.isFinite(retryAfterSeconds)
+      ? retryAfterSeconds * 1000
+      : RETRY_DELAYS_MS[attempt];
+    const isLastAttempt = attempt === RETRY_DELAYS_MS.length;
+
+    if (response.status !== 429 || typeof retryDelay !== "number" || isLastAttempt) {
+      return { ok: false, endpoint, status: response.status, message };
+    }
+
+    await sleep(retryDelay);
+  }
+
+  return {
+    ok: false,
+    endpoint,
+    status: 429,
+    message: "Rate limited after retrying Anthropic OAuth endpoint.",
+  };
+}
+
+function buildOauthCredential(tokenResponse, currentRefresh) {
+  if (!tokenResponse?.access_token) {
+    throw new Error("OAuth token response did not include access_token.");
+  }
+  if (typeof tokenResponse?.expires_in !== "number") {
+    throw new Error("OAuth token response did not include expires_in.");
+  }
+
+  const refreshToken = tokenResponse.refresh_token || currentRefresh;
+  if (!refreshToken) {
+    throw new Error("OAuth token response did not include refresh_token.");
+  }
+
+  return {
+    type: "oauth",
+    refresh: refreshToken,
+    access: tokenResponse.access_token,
+    expires: Date.now() + tokenResponse.expires_in * 1000,
+  };
+}
+
+async function requestTokens(payload) {
+  let failure = null;
+  for (const endpoint of TOKEN_ENDPOINTS) {
+    const result = await exchangeWithRetry(endpoint, payload);
+    if (result.ok) {
+      return result;
+    }
+    failure = result;
+  }
+
+  throw new Error(`${failure.status} ${failure.message} (${failure.endpoint})`);
+}
+
+function getOauthAuth() {
+  const auth = loadAuth();
+  const anthropic = auth.anthropic;
+
+  if (!anthropic) {
+    throw new Error("Anthropic is not configured in auth.json.");
+  }
+  if (anthropic.type !== "oauth") {
+    throw new Error("Anthropic auth is not in oauth mode.");
+  }
+  if (!anthropic.refresh) {
+    throw new Error("Stored Anthropic oauth credentials do not include refresh token.");
+  }
+
+  return { auth, anthropic };
+}
+
+async function oauthExchange(pastedInput) {
+  const normalized = normalizePastedInput(pastedInput);
+  const [code, state] = normalized.split("#");
+  if (!code || !state) {
+    throw new Error("Expected input in the form code#state or a callback URL.");
+  }
+
+  const payload = {
+    code,
+    state,
+    grant_type: "authorization_code",
+    client_id: CLIENT_ID,
+    redirect_uri: CALLBACK_URL,
+    code_verifier: state,
+  };
+
+  const result = await requestTokens(payload);
+  const auth = loadAuth();
+  auth.anthropic = buildOauthCredential(result.json);
+  saveAuth(auth);
+  console.log("Stored Anthropic OAuth credentials in auth.json");
+  console.log(`Endpoint: ${result.endpoint}`);
+  console.log(`Expires: ${new Date(auth.anthropic.expires).toISOString()}`);
+}
+
+async function oauthRefresh() {
+  const { auth, anthropic } = getOauthAuth();
+  const result = await requestTokens({
+    grant_type: "refresh_token",
+    refresh_token: anthropic.refresh,
+    client_id: CLIENT_ID,
+  });
+
+  auth.anthropic = buildOauthCredential(result.json, anthropic.refresh);
+  saveAuth(auth);
+  console.log("Refreshed Anthropic OAuth credentials in auth.json");
+  console.log(`Endpoint: ${result.endpoint}`);
+  console.log(`Expires: ${new Date(auth.anthropic.expires).toISOString()}`);
+}
+
+function setApiKey(key) {
+  const auth = loadAuth();
+  auth.anthropic = {
+    type: "api",
+    key,
+  };
+  saveAuth(auth);
+  console.log("Stored Anthropic API key in auth.json");
+}
+
+function printStatus() {
+  const auth = loadAuth();
+  const anthropic = auth.anthropic;
+  if (!anthropic) {
+    console.log("Anthropic: not configured");
+    return;
+  }
+
+  if (anthropic.type === "api") {
+    console.log("Anthropic: api");
+    console.log(`Key present: ${Boolean(anthropic.key)}`);
+    return;
+  }
+
+  console.log("Anthropic: oauth");
+  console.log(`Access present: ${Boolean(anthropic.access)}`);
+  console.log(`Refresh present: ${Boolean(anthropic.refresh)}`);
+  console.log(`Expires: ${anthropic.expires ? new Date(anthropic.expires).toISOString() : "missing"}`);
+  console.log(`Expired: ${anthropic.expires ? anthropic.expires <= Date.now() : "unknown"}`);
+}
+
+const [, , command, ...args] = process.argv;
+
+try {
+  if (!command || command === "--help" || command === "-h") {
+    printUsage();
+    process.exit(0);
+  }
+
+  if (command === "help") {
+    if (args[0]) {
+      printCommandHelp(args[0]);
+    } else {
+      printUsage();
+    }
+    process.exit(0);
+  }
+
+  if (command === "status") {
+    printStatus();
+    process.exit(0);
+  }
+
+  if (command === "doctor") {
+    printDoctor();
+    process.exit(0);
+  }
+
+  if (command === "oauth-url") {
+    console.log(buildOauthUrl());
+    process.exit(0);
+  }
+
+  if (command === "api") {
+    const key = args[0] || process.env.ANTHROPIC_API_KEY;
+    if (!key) {
+      throw new Error("Provide an Anthropic API key as an argument or via ANTHROPIC_API_KEY.");
+    }
+    setApiKey(key);
+    process.exit(0);
+  }
+
+  if (command === "oauth-exchange") {
+    const pastedInput = args[0];
+    if (!pastedInput) {
+      throw new Error("Provide code#state or a callback URL.");
+    }
+    await oauthExchange(pastedInput);
+    process.exit(0);
+  }
+
+  if (command === "oauth-refresh") {
+    await oauthRefresh();
+    process.exit(0);
+  }
+
+  if (command === "plugin-config") {
+    printPluginConfig();
+    process.exit(0);
+  }
+
+  if (command === "plugin-set-betas") {
+    setPluginBetas(args[0]);
+    process.exit(0);
+  }
+
+  if (command === "plugin-set-user-agent") {
+    setPluginUserAgent(args.join(" "));
+    process.exit(0);
+  }
+
+  if (command === "plugin-reset") {
+    resetPluginConfig();
+    process.exit(0);
+  }
+
+  if (command === "sources") {
+    printSources();
+    process.exit(0);
+  }
+
+  if (command === "bootstrap" || command === "sync") {
+    const result = bootstrapBundle(args[0]);
+    printBootstrapSummary(result);
+    process.exit(0);
+  }
+
+  if (command === "cron-run") {
+    await runCron(args[0]);
+    process.exit(0);
+  }
+
+  if (command === "upstream-check") {
+    await runUpstreamCheck();
+    process.exit(0);
+  }
+
+  throw new Error(`Unknown command: ${command}`);
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}

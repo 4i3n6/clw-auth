@@ -1,0 +1,31 @@
+{
+  "name": "claude-oauth",
+  "version": "1.0.0",
+  "description": "OpenCode Anthropic OAuth helper - autenticação, plugins e manutenção agendada para o OpenCode CLI",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "bootstrap": "node src/install.mjs",
+    "status": "node src/opencode-anthropic-auth status",
+    "doctor": "node src/opencode-anthropic-auth doctor",
+    "oauth-url": "node src/opencode-anthropic-auth oauth-url",
+    "oauth-refresh": "node src/opencode-anthropic-auth oauth-refresh",
+    "upstream-check": "node src/opencode-anthropic-auth upstream-check",
+    "plugin-config": "node src/opencode-anthropic-auth plugin-config",
+    "plugin-reset": "node src/opencode-anthropic-auth plugin-reset",
+    "cron-run": "node src/opencode-anthropic-auth cron-run $(pwd)/bundle",
+    "install:bundle": "node scripts/install-bundle.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "opencode",
+    "anthropic",
+    "oauth",
+    "claude",
+    "cli"
+  ],
+  "author": "",
+  "license": "UNLICENSED"
+}
