@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Instala a entrada de cron para manutenção automática do OAuth a cada 6 horas.
- * Evita duplicatas: só adiciona se a entrada ainda não existir.
+ * Installs a cron entry for automatic OAuth maintenance every 6 hours.
+ * Avoids duplicates: only adds the entry if it does not already exist.
  *
- * Uso: node scripts/setup-cron.mjs
+ * Usage: node scripts/setup-cron.mjs
  */
 
 import { spawnSync, execSync } from "node:child_process";
@@ -13,11 +13,10 @@ import { homedir } from "node:os";
 
 const HOME = homedir();
 const PROJECT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const BUNDLE_DIR = join(PROJECT_DIR, "bundle");
-const HELPER = join(HOME, ".local", "bin", "opencode-anthropic-auth");
-const LOG_PATH = join(HOME, ".local", "state", "opencode", "anthropic-auth-cron.log");
+const CLI_PATH = resolve(PROJECT_DIR, "src", "cli.mjs");
+const LOG_PATH = join(HOME, ".local", "share", "claude-oauth", "cron.log");
 
-const CRON_LINE = `0 */6 * * * ${HELPER} cron-run ${BUNDLE_DIR} >> ${LOG_PATH} 2>&1`;
+const CRON_LINE = `0 */6 * * * node "${CLI_PATH}" cron-run >> "${LOG_PATH}" 2>&1`;
 
 function getCurrentCrontab() {
   try {
@@ -29,9 +28,9 @@ function getCurrentCrontab() {
 
 const current = getCurrentCrontab();
 
-if (current.includes("opencode-anthropic-auth")) {
-  console.log("Entrada de cron ja existente. Nenhuma alteracao realizada.");
-  console.log(`\nEntrada detectada:\n${current.split("\n").find((l) => l.includes("opencode-anthropic-auth"))}`);
+if (current.includes("claude-oauth")) {
+  console.log("Cron entry already exists. No changes made.");
+  console.log(`\nDetected entry:\n${current.split("\n").find((l) => l.includes("claude-oauth"))}`);
   process.exit(0);
 }
 
@@ -43,10 +42,10 @@ const result = spawnSync("crontab", ["-"], {
 });
 
 if (result.status !== 0) {
-  console.error("Falha ao instalar cron.");
+  console.error("Failed to install cron entry.");
   process.exit(1);
 }
 
-console.log("Cron instalado com sucesso.");
-console.log(`\nEntrada adicionada:\n${CRON_LINE}`);
-console.log(`\nLogs serao gravados em:\n${LOG_PATH}`);
+console.log("Cron entry installed successfully.");
+console.log(`\nAdded entry:\n${CRON_LINE}`);
+console.log(`\nLogs will be written to:\n${LOG_PATH}`);

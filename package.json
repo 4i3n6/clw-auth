@@ -1,29 +1,29 @@
 {
   "name": "claude-oauth",
   "version": "1.0.0",
-  "description": "OpenCode Anthropic OAuth helper - autenticação, plugins e manutenção agendada para o OpenCode CLI",
+  "description": "Standalone Anthropic OAuth credential manager",
   "type": "module",
   "private": true,
+  "bin": {
+    "claude-oauth": "src/cli.mjs"
+  },
   "scripts": {
-    "bootstrap": "node src/install.mjs",
-    "status": "node src/opencode-anthropic-auth status",
-    "doctor": "node src/opencode-anthropic-auth doctor",
-    "oauth-url": "node src/opencode-anthropic-auth oauth-url",
-    "oauth-refresh": "node src/opencode-anthropic-auth oauth-refresh",
-    "upstream-check": "node src/opencode-anthropic-auth upstream-check",
-    "plugin-config": "node src/opencode-anthropic-auth plugin-config",
-    "plugin-reset": "node src/opencode-anthropic-auth plugin-reset",
-    "cron-run": "node src/opencode-anthropic-auth cron-run $(pwd)/bundle",
-    "install:bundle": "node scripts/install-bundle.mjs"
+    "status": "node src/cli.mjs status",
+    "doctor": "node src/cli.mjs doctor",
+    "oauth-url": "node src/cli.mjs oauth-url",
+    "refresh": "node src/cli.mjs refresh",
+    "upstream-check": "node src/cli.mjs upstream-check",
+    "api-ref": "node src/cli.mjs api-ref",
+    "config": "node src/cli.mjs config",
+    "cron-run": "node src/cli.mjs cron-run",
+    "setup-cron": "node scripts/setup-cron.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "keywords": [
-    "opencode",
     "anthropic",
     "oauth",
-    "claude",
     "cli"
   ],
   "author": "",
