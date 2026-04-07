@@ -134,11 +134,13 @@ if [ -d "$INSTALL_DIR/.git" ]; then
         gap
       else
         info "Updating v$CURRENT → v$LATEST..."
-        git -C "$INSTALL_DIR" checkout --quiet "$LATEST_TAG"
+        git -C "$INSTALL_DIR" reset --hard --quiet
+        git -C "$INSTALL_DIR" checkout --force --quiet "$LATEST_TAG"
         ok "Updated to v$LATEST."
         gap
       fi
     else
+      git -C "$INSTALL_DIR" reset --hard --quiet
       git -C "$INSTALL_DIR" pull --quiet --ff-only
       ok "Repository updated."
       gap
