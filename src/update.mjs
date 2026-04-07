@@ -1,6 +1,6 @@
 import { createInterface } from 'node:readline';
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -87,6 +87,12 @@ export async function runUpdate() {
     console.error(`Try manually: git -C "${INSTALL_DIR}" reset --hard ${newest}`);
     return;
   }
+
+  // git reset --hard restores file modes from the index.
+  // Ensure the CLI entry point stays executable regardless of stored mode.
+  try {
+    chmodSync(resolve(INSTALL_DIR, 'src', 'cli.mjs'), 0o755);
+  } catch { /* best-effort */ }
 
   console.log(`\nUpdated to ${newest}.`);
   console.log('The new version is active on the next clw-auth invocation — no shell reload required.');

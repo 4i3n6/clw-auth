@@ -135,12 +135,14 @@ if [ -d "$INSTALL_DIR/.git" ]; then
       else
         info "Updating v$CURRENT → v$LATEST..."
         git -C "$INSTALL_DIR" reset --hard --quiet "$LATEST_TAG"
+        chmod +x "$INSTALL_DIR/src/cli.mjs"
         ok "Updated to v$LATEST."
         gap
       fi
     else
       git -C "$INSTALL_DIR" fetch --quiet
       git -C "$INSTALL_DIR" reset --hard --quiet origin/master
+      chmod +x "$INSTALL_DIR/src/cli.mjs"
       ok "Repository updated."
       gap
     fi
