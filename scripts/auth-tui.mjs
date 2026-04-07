@@ -546,13 +546,15 @@ function openBrowser(url) {
 
   try {
     if (os === 'darwin') {
-      spawnSync('open', [url], { timeout: 5000 });
-    } else if (os === 'win32') {
-      spawnSync('start', ['', url], { shell: true, timeout: 5000 });
-    } else {
-      spawnSync('xdg-open', [url], { timeout: 5000 });
+      return spawnSync('open', [url], { timeout: 5000 }).status === 0;
     }
+    if (os === 'win32') {
+      return spawnSync('start', ['', url], { shell: true, timeout: 5000 }).status === 0;
+    }
+    return spawnSync('xdg-open', [url], { timeout: 5000 }).status === 0;
   } catch { /* best-effort */ }
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -690,33 +692,40 @@ async function stepOauth() {
     throw new Error('Generated OAuth URL is invalid. This is likely a bug — please open an issue.');
   }
 
-  const copied      = copyToClipboard(url);
-  const displayUrl  = url.length > W - 4 ? `${url.slice(0, W - 7)}...` : url;
-  const fullCopied  = copied && displayUrl !== url; // URL was truncated for display
-
-  openBrowser(url);
+  const copied = copyToClipboard(url);
+  const browserOpened = openBrowser(url);
 
   box([
     c.bold('1.  Open this URL in your browser:'),
     '',
-    c.cyan(displayUrl),
-    '',
     c.bold('2.  Complete the Anthropic login.'),
-    c.bold('3.  Copy the returned code or full callback URL.'),
+    c.bold('3.  Copy the callback URL from the address bar.'),
   ], { title: 'Browser Login' });
 
   gap();
 
+  // Always print the full URL outside the box — never truncate — so the
+  // user can select and copy it manually even when clipboard is unavailable.
+  console.log(`  ${ansi.cyan}${url}${ansi.reset}`);
+  gap();
+
   if (copied) {
-    ok(`URL ${fullCopied ? '(full URL) ' : ''}copied to clipboard.`);
+    ok('URL copied to clipboard.');
   } else {
-    warn('Could not copy to clipboard — copy the URL above manually.');
+    warn('Clipboard unavailable — select and copy the URL above manually.');
+    if (process.platform === 'linux') {
+      info('Install xclip for auto-copy: ' + c.dim('sudo apt install xclip'));
+    }
   }
 
-  info('Attempted to open your browser automatically.');
+  if (browserOpened) {
+    ok('Browser opened automatically.');
+  } else {
+    warn('Could not open browser automatically — open the URL above manually.');
+  }
+
   gap();
-  info('The code looks like: ' + c.dim('code123#state456'));
-  info('Or paste the full callback URL from the browser address bar.');
+  info('After login, paste the full callback URL or the ' + c.dim('code#state') + ' value:');
   gap();
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
