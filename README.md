@@ -1,70 +1,73 @@
 # claude-oauth
 
-Gerenciador standalone de credenciais Anthropic OAuth. Produz arquivos padronizados que qualquer sistema consome.
+Standalone Anthropic OAuth credential manager. Produces standardized files that any system can consume directly.
 
-## O que faz
+## What it does
 
-1. Autentica via OAuth 2.0 PKCE ou API key
-2. Persiste tokens em `~/.local/share/claude-oauth/auth.json`
-3. Gera `api-reference.json` com URL, headers e authorization prontos para uso
-4. Renova tokens automaticamente via cron
-5. Monitora drift de user-agent e beta headers contra docs oficiais da Anthropic
-6. Exporta credenciais para sistemas especificos (OpenCode, etc.) via exportadores opcionais
+1. Authenticates via OAuth 2.0 PKCE or API key
+2. Persists tokens at `~/.local/share/claude-oauth/auth.json`
+3. Generates `api-reference.json` with endpoint, headers, and authorization ready to use
+4. Automatically renews tokens via cron
+5. Monitors user-agent and beta header drift against official Anthropic docs
+6. Exports credentials to specific systems (OpenCode, OpenClaw) via optional exporters
 
-## Como funciona
+## How it works
 
 ```
-claude-oauth (este projeto)
+claude-oauth (this project)
     |
-    |-- auth.json          (credenciais: access, refresh, expires)
-    |-- api-reference.json (como chamar: URL, headers, authorization)
+    |-- auth.json          (credentials: access, refresh, expires)
+    |-- api-reference.json (how to call: endpoint, headers, authorization)
     |-- config.json        (beta headers, user-agent)
     |
-    +--> OpenCode le e usa (via export opencode)
-    +--> OpenClaw le e usa (via export openclaw)
-    +--> Script Python le e usa (le api-reference.json direto)
-    +--> curl le e usa (le api-reference.json direto)
-    +--> qualquer sistema le e usa
+    +--> OpenCode reads and uses (via export opencode)
+    +--> OpenClaw reads and uses (via export openclaw)
+    +--> Python script reads and uses (reads api-reference.json directly)
+    +--> curl reads and uses (reads api-reference.json directly)
+    +--> any system reads and uses
 ```
 
-Nenhum sistema e especial. O projeto produz arquivos padronizados em `~/.local/share/claude-oauth/`. Quem quiser consumir, consome.
+No system is special. This project produces standardized files in `~/.local/share/claude-oauth/`. Any consumer reads them directly — no plugin, no patch, no coupling.
 
-## Requisitos
+## Requirements
 
 - Node.js >= 18
 
-## Estrutura
+## Structure
 
 ```
 claude-oauth/
   src/
     cli.mjs              # Entry point + command dispatch
-    store.mjs            # Persistencia atomica (auth.json, api-reference.json, config.json)
+    store.mjs            # Atomic persistence (auth.json, api-reference.json, config.json)
     auth.mjs             # OAuth PKCE, exchange, refresh, API key
     config.mjs           # Beta headers, user-agent, defaults
-    api-reference.mjs    # Geracao do api-reference.json
-    upstream.mjs         # Fetch + analise de docs Anthropic
-    cron.mjs             # Lock + refresh condicional + upstream check
+    api-reference.mjs    # api-reference.json generation
+    upstream.mjs         # Fetch + analysis of Anthropic docs
+    cron.mjs             # Lock + conditional refresh + upstream check
     exporters/
-      index.mjs          # Registry de exportadores
-      opencode.mjs       # Exportador OpenCode (unico lugar com logica OpenCode)
+      index.mjs          # Exporter registry
+      opencode.mjs       # OpenCode exporter
+      openclaw.mjs       # OpenClaw exporter
   scripts/
-    setup-cron.mjs       # Instala entrada no cron
+    setup-cron.mjs       # Installs cron entry (idempotent)
+  CHANGELOG.md
+  LICENSE
   package.json
 ```
 
-## Arquivos de saida (`~/.local/share/claude-oauth/`)
+## Output files (`~/.local/share/claude-oauth/`)
 
-| Arquivo | Permissao | Descricao |
+| File | Permission | Description |
 |---|---|---|
-| `auth.json` | 600 | Credenciais brutas (access, refresh, expires, type) |
-| `auth.json.bak` | 600 | Backup automatico antes de qualquer escrita |
-| `api-reference.json` | 644 | URL + headers + authorization prontos para consumo |
-| `config.json` | 600 | Beta headers e user-agent configurados |
-| `cron.lock` | 600 | Lock de execucao concorrente |
-| `debug.log` | 600 | Log JSONL de operacoes |
+| `auth.json` | 600 | Raw credentials (access, refresh, expires, type) |
+| `auth.json.bak` | 600 | Automatic backup before any write |
+| `api-reference.json` | 644 | Endpoint + headers + authorization ready for consumption |
+| `config.json` | 600 | Beta headers and user-agent |
+| `cron.lock` | 600 | Concurrency execution lock |
+| `debug.log` | 600 | JSONL operation log |
 
-### Exemplo de `api-reference.json`
+### Example `api-reference.json`
 
 ```json
 {
@@ -83,22 +86,22 @@ claude-oauth/
 }
 ```
 
-Qualquer sistema le esse arquivo e faz a chamada. Sem plugin, sem patch, sem acoplamento.
+Any system reads this file and makes the call. No plugin, no patch, no coupling.
 
-## Autenticacao
+## Authentication
 
-### OAuth (recomendado)
+### OAuth (recommended)
 
 ```bash
-# 1. Gerar URL de login
+# 1. Generate login URL
 node src/cli.mjs oauth-url
 
-# 2. Abrir no navegador, completar login, copiar o retorno code#state
+# 2. Open in browser, complete login, copy the returned code#state
 
-# 3. Trocar por tokens
+# 3. Exchange for tokens
 node src/cli.mjs oauth-exchange "code#state"
 
-# 4. Verificar
+# 4. Verify
 node src/cli.mjs status
 ```
 
@@ -109,79 +112,80 @@ node src/cli.mjs api "$ANTHROPIC_API_KEY"
 node src/cli.mjs status
 ```
 
-## Comandos
+## Commands
 
 ### Core
 
 ```bash
-claude-oauth oauth-url                    # Gera URL OAuth (PKCE)
-claude-oauth oauth-exchange <input>       # Troca code#state por tokens
-claude-oauth refresh                      # Renova token OAuth
-claude-oauth status                       # Status de auth atual
+claude-oauth oauth-url                    # Generate OAuth URL (PKCE)
+claude-oauth oauth-exchange <input>       # Exchange code#state for tokens
+claude-oauth refresh                      # Renew OAuth token
+claude-oauth status                       # Current auth status
 claude-oauth doctor                       # Status + api-ref + config + sources
-claude-oauth api <key>                    # Salva API key
+claude-oauth api <key>                    # Save API key
 ```
 
 ### API reference
 
 ```bash
-claude-oauth api-ref                      # Mostra api-reference.json
-claude-oauth api-ref-update               # Regenera api-reference.json
+claude-oauth api-ref                      # Print api-reference.json
+claude-oauth api-ref-update               # Regenerate api-reference.json
 ```
 
 ### Config
 
 ```bash
-claude-oauth config                       # Mostra config atual
-claude-oauth set-betas <csv|none>         # Define beta headers
-claude-oauth set-user-agent <ua|default>  # Define user-agent
-claude-oauth config-reset                 # Restaura defaults
+claude-oauth config                       # Print current config
+claude-oauth set-betas <csv|none>         # Set beta headers
+claude-oauth set-user-agent <ua|default>  # Set user-agent
+claude-oauth config-reset                 # Restore defaults
 ```
 
 ### Upstream
 
 ```bash
-claude-oauth upstream-check               # Compara local vs docs Anthropic
-claude-oauth sources                      # Mostra URLs monitoradas
+claude-oauth upstream-check               # Compare local config vs Anthropic docs
+claude-oauth sources                      # Print monitored URLs
 ```
 
-### Exportadores
+### Exporters
 
 ```bash
-claude-oauth export                       # Lista exportadores disponiveis
-claude-oauth export opencode              # Exporta config para OpenCode
+claude-oauth export                       # List available exporters
+claude-oauth export opencode              # Export config to OpenCode
+claude-oauth export openclaw              # Export credentials to OpenClaw
 ```
 
-### Manutencao
+### Maintenance
 
 ```bash
-claude-oauth cron-run                     # Executa manutencao (para cron/launchd)
+claude-oauth cron-run                     # Run maintenance (for cron/launchd)
 ```
 
-## Manutencao automatica (cron)
+## Automatic maintenance (cron)
 
-Instala entrada no cron para rodar a cada 6 horas:
+Install a cron entry to run every 6 hours:
 
 ```bash
 node scripts/setup-cron.mjs
 ```
 
-O cron executa:
-1. Refresh OAuth se o token expira em menos de 1 hora
-2. Coleta dados upstream (docs Anthropic)
-3. Atualiza user-agent automaticamente se estiver defasado
-4. Regenera api-reference.json
-5. Reporta drift de beta headers (sem alterar automaticamente)
+The cron runs:
+1. OAuth refresh if token expires in less than 1 hour
+2. Collect upstream data (Anthropic docs)
+3. Automatically update user-agent if stale
+4. Regenerate api-reference.json
+5. Report beta header drift (without auto-modifying)
 
-Execucao manual:
+Manual run:
 
 ```bash
 node src/cli.mjs cron-run
 ```
 
-## Exportadores
+## Exporters
 
-O sistema de exportadores permite integrar com qualquer ferramenta sem acoplar o core.
+The exporter system allows integration with any tool without coupling the core.
 
 ### OpenCode
 
@@ -189,47 +193,60 @@ O sistema de exportadores permite integrar com qualquer ferramenta sem acoplar o
 node src/cli.mjs export opencode
 ```
 
-Esse exportador:
-- Copia credenciais para `~/.local/share/opencode/auth.json` (preserva outros providers)
-- Gera plugin Anthropic em `~/.config/opencode/plugins/`
-- Patcha `~/.config/opencode/opencode.json` para incluir o plugin
+This exporter:
+- Copies credentials to `~/.local/share/opencode/auth.json` (preserves other providers)
+- Generates Anthropic plugin at `~/.config/opencode/plugins/claude-oauth-anthropic.mjs`
+- Patches `~/.config/opencode/opencode.json` to include the plugin
 
-### Adicionar um novo exportador
-
-1. Criar `src/exporters/<sistema>.mjs` com `export async function run() { ... }`
-2. Registrar em `src/exporters/index.mjs`
-
-O core nao muda. Cada exportador le `auth.json` e `api-reference.json` e gera o que o sistema alvo precisar.
-
-## Portabilidade
+### OpenClaw
 
 ```bash
-# Copiar para outra maquina
+node src/cli.mjs export openclaw
+```
+
+This exporter:
+- Syncs OAuth or API key credentials to `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`
+
+### Adding a new exporter
+
+1. Create `src/exporters/<system>.mjs` with `export async function run() { ... }`
+2. Register in `src/exporters/index.mjs`
+
+The core does not change. Each exporter reads `auth.json` and `api-reference.json` and produces whatever the target system needs.
+
+## Portability
+
+```bash
+# Copy to another machine
 scp -r ~/Sistemas/claude-oauth user@host:~/claude-oauth
 
-# Na maquina destino, autenticar
+# On destination machine, authenticate
 node ~/claude-oauth/src/cli.mjs oauth-url
 node ~/claude-oauth/src/cli.mjs oauth-exchange "code#state"
 node ~/claude-oauth/src/cli.mjs status
 
-# Opcional: exportar para OpenCode
+# Optional: export to OpenCode
 node ~/claude-oauth/src/cli.mjs export opencode
 
-# Opcional: instalar cron
+# Optional: install cron
 node ~/claude-oauth/scripts/setup-cron.mjs
 ```
 
-## Fontes upstream monitoradas
+## Monitored upstream sources
 
-- https://docs.anthropic.com/en/api/beta-headers
-- https://docs.anthropic.com/en/release-notes/api
-- https://docs.anthropic.com/en/release-notes/claude-code
+- https://platform.claude.com/docs/en/api/beta-headers
+- https://platform.claude.com/docs/en/release-notes/overview
+- https://raw.githubusercontent.com/anthropics/claude-code/refs/heads/main/CHANGELOG.md
 
-## Seguranca
+## Security
 
-- Credenciais nunca sao commitadas (`.gitignore`)
-- `auth.json` e `config.json` gravados com permissao `600`
-- `api-reference.json` gravado com permissao `644` (leitura por outros processos)
-- Todas as escritas sao atomicas (write tmp + rename)
-- Backup automatico de `auth.json` antes de qualquer sobrescrita
-- Lock interno para evitar execucoes concorrentes do cron
+- Credentials are never committed (`.gitignore`)
+- `auth.json` and `config.json` written with `600` permission
+- `api-reference.json` written with `644` permission (readable by other processes)
+- All writes are atomic (write tmp + rename)
+- Automatic backup of `auth.json` before any overwrite
+- Internal lock to prevent concurrent cron executions
+
+## License
+
+MIT — see [LICENSE](LICENSE).
