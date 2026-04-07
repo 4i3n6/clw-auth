@@ -52,7 +52,7 @@ const printResult = (result) => {
   console.log(JSON.stringify(result, null, 2));
 };
 
-const splitCodeAndState = (value) => {
+export const splitCodeAndState = (value) => {
   const separatorIndex = value.indexOf('#');
 
   if (separatorIndex <= 0 || separatorIndex === value.length - 1) {
