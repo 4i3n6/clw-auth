@@ -604,11 +604,12 @@ async function fetchModels() {
 
   if (!auth || !auth.type) return null;
 
-  const headers = { 'anthropic-version': ANTHROPIC_API_VERSION, 'content-type': 'application/json' };
+  const headers = { 'anthropic-version': ANTHROPIC_API_VERSION };
 
   if (auth.type === 'oauth') {
     if (!auth.access) return null;
     headers['authorization'] = `Bearer ${auth.access}`;
+    headers['anthropic-beta'] = 'oauth-2025-04-20';
   } else if (auth.type === 'api') {
     const key = auth.key || (() => { try { return loadJson(getAuthPath()).key; } catch { return null; } })();
     if (!key) return null;
