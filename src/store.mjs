@@ -12,7 +12,7 @@ import {
 import { dirname, join, sep } from 'node:path';
 import { homedir } from 'node:os';
 
-const DATA_DIR = join(homedir(), '.local', 'share', 'claude-oauth');
+const DATA_DIR = join(homedir(), '.local', 'share', 'clw-auth');
 
 function ensureParent(filePath) {
   mkdirSync(dirname(filePath), { recursive: true });
