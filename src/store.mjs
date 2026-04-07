@@ -41,6 +41,11 @@ function normalizeAuth(auth) {
     normalized.expires = auth.expires;
   }
 
+  // API key — stored verbatim; never logged (debug callers must redact this field).
+  if (typeof auth.key === 'string' && auth.key) {
+    normalized.key = auth.key;
+  }
+
   return normalized;
 }
 
