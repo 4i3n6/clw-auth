@@ -317,7 +317,7 @@ export function installCron() {
     current = execSync('crontab -l 2>/dev/null', { encoding: 'utf8' });
   } catch { /* no existing crontab */ }
 
-  const existingEntry = current.split('\n').find((l) => l.includes('claude-oauth') && !l.trim().startsWith('#'));
+  const existingEntry = current.split('\n').find((l) => l.includes('clw-auth') && !l.trim().startsWith('#'));
 
   if (existingEntry) {
     console.log('Cron entry already installed. No changes made.');
@@ -341,7 +341,7 @@ export function printCronStatus() {
   let cronEntry = null;
   try {
     const crontab = execSync('crontab -l 2>/dev/null', { encoding: 'utf8' });
-    cronEntry = crontab.split('\n').find((l) => l.includes('claude-oauth') && !l.trim().startsWith('#')) || null;
+    cronEntry = crontab.split('\n').find((l) => l.includes('clw-auth') && !l.trim().startsWith('#')) || null;
   } catch { /* no crontab */ }
 
   console.log(`Installed: ${cronEntry ? 'yes' : 'no'}`);

@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 const HOME = homedir();
 const PROJECT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI_PATH = resolve(PROJECT_DIR, "src", "cli.mjs");
-const LOG_PATH = join(HOME, ".local", "share", "claude-oauth", "cron.log");
+const LOG_PATH = join(HOME, ".local", "share", "clw-auth", "cron.log");
 
 const CRON_LINE = `0 */6 * * * node "${CLI_PATH}" cron-run >> "${LOG_PATH}" 2>&1`;
 
@@ -28,9 +28,9 @@ function getCurrentCrontab() {
 
 const current = getCurrentCrontab();
 
-if (current.includes("claude-oauth")) {
+if (current.includes("clw-auth")) {
   console.log("Cron entry already exists. No changes made.");
-  console.log(`\nDetected entry:\n${current.split("\n").find((l) => l.includes("claude-oauth"))}`);
+  console.log(`\nDetected entry:\n${current.split("\n").find((l) => l.includes("clw-auth"))}`);
   process.exit(0);
 }
 
