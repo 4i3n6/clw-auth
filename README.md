@@ -14,13 +14,30 @@ Standalone Anthropic OAuth credential manager. Produces standardized files that 
 curl -fsSL https://raw.githubusercontent.com/4i3n6/clw-auth/master/scripts/install.sh | sh
 ```
 
+The installer will:
+1. Check Node.js >= 18 and git
+2. Clone the repo to `~/.local/share/clw-auth`
+3. Create a symlink at `~/.local/bin/clw-auth`
+4. Add `~/.local/bin` to your PATH (with confirmation) if not already set
+5. Print a `source ~/.zshrc` command if your shell profile was modified
+
 Then run the interactive setup wizard:
 
 ```bash
 clw-auth auth-setup
 ```
 
+> **Shell reload**: if the installer added `~/.local/bin` to your PATH, run `source ~/.zshrc` (or `~/.bashrc`) before using `clw-auth`, or open a new terminal.
+
 > **Manual install**: clone the repo and run `node src/cli.mjs` directly — no build step required.
+
+## Update
+
+```bash
+clw-auth update
+```
+
+Fetches the latest release tag from GitHub and updates the installation in place. No shell reload required — the symlink stays the same, files update transparently.
 
 ## What it does
 
@@ -130,6 +147,13 @@ clw-auth status
 ```
 
 ## Commands
+
+### Setup
+
+```bash
+clw-auth auth-setup                   # Interactive setup wizard (first-time)
+clw-auth update                       # Update to latest release from GitHub
+```
 
 ### Core
 
