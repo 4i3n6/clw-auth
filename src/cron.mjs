@@ -207,6 +207,24 @@ export function releaseCronLock() {
   }
 }
 
+async function syncExportersAfterRefresh(actions) {
+  try {
+    const { runExporter, EXPORTERS } = await import('./exporters/index.mjs');
+
+    // OpenClaw: sync all agents that already have an anthropic profile.
+    if (EXPORTERS.has('openclaw')) {
+      await runExporter('openclaw', { allConfigured: true });
+      actions.push('openclaw credentials synced after token rotation');
+      debugLog('cron-exporter-synced', { exporter: 'openclaw' });
+    }
+  } catch (error) {
+    // Never let sync failures break the cron run.
+    const msg = error instanceof Error ? error.message : String(error);
+    actions.push(`exporter sync failed (non-fatal): ${msg}`);
+    debugLog('cron-exporter-sync-failed', { error: msg });
+  }
+}
+
 export async function runCron() {
   if (!acquireCronLock()) {
     console.log('Cron maintenance skipped: another instance is active');
@@ -235,6 +253,12 @@ export async function runCron() {
       await oauthRefresh();
       actions.push('oauth refreshed');
       debugLog('cron-oauth-refreshed');
+
+      // Anthropic rotates refresh tokens on every renewal.
+      // Any exporter that stored the old refresh token (e.g. OpenClaw auth-profiles.json)
+      // would become unable to refresh on its own. Sync all configured exporters
+      // silently so every store has the new tokens immediately.
+      await syncExportersAfterRefresh(actions);
     } else if (auth?.type === 'oauth') {
       actions.push('oauth refresh not needed');
     } else {
