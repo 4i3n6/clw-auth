@@ -58,8 +58,9 @@ const ansi = {
   yellow:   `${ESC}33m`,
   red:      `${ESC}31m`,
   white:    `${ESC}97m`,
-  hide:     `${ESC}?25l`,
-  show:     `${ESC}?25h`,
+  hide:      `${ESC}?25l`,
+  show:      `${ESC}?25h`,
+  clearLine: `${ESC}2K\r`,
 };
 
 const c = {
