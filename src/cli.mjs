@@ -9,6 +9,7 @@ const loadUpstreamModule = () => import('./upstream.mjs');
 const loadCronModule = () => import('./cron.mjs');
 const loadExportersModule = () => import('./exporters/index.mjs');
 const loadStoreModule = () => import('./store.mjs');
+const loadUpdateModule = () => import('./update.mjs');
 
 const COMMAND_GROUPS = [
   {
@@ -17,6 +18,10 @@ const COMMAND_GROUPS = [
       {
         usage: 'auth-setup',
         summary: 'Interactive wizard: authenticate and export to OpenCode or OpenClaw.',
+      },
+      {
+        usage: 'update',
+        summary: 'Update clw-auth to the latest release from GitHub.',
       },
     ],
   },
@@ -148,6 +153,14 @@ const COMMAND_HELP = new Map([
       usage: 'auth-setup',
       description: 'Launch the interactive TUI setup wizard. Guides through tool selection (OpenCode / OpenClaw / Both), authentication (OAuth or API key), and credential export.',
       examples: ['clw-auth auth-setup'],
+    },
+  ],
+  [
+    'update',
+    {
+      usage: 'update',
+      description: 'Fetch the latest release tag from GitHub and update the installation in place. Requires a git-managed installation (default when installed via install.sh). No shell reload required after update.',
+      examples: ['clw-auth update'],
     },
   ],
   [
@@ -518,6 +531,11 @@ const runCommand = async (command, args) => {
   const resolvedCommand = resolveCommandName(command);
 
   switch (resolvedCommand) {
+    case 'update': {
+      const { runUpdate } = await loadUpdateModule();
+      await runUpdate();
+      return;
+    }
     case 'auth-setup': {
       const { spawnSync } = await import('node:child_process');
       const { fileURLToPath: fu } = await import('node:url');
