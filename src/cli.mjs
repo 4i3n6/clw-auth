@@ -104,8 +104,20 @@ const COMMAND_GROUPS = [
     title: 'Maintenance',
     commands: [
       {
+        usage: 'cron-install',
+        summary: 'Install cron job for automatic OAuth token renewal.',
+      },
+      {
+        usage: 'cron-status',
+        summary: 'Show cron installation state and last run summary.',
+      },
+      {
+        usage: 'cron-logs [n]',
+        summary: 'Print last N lines of the cron execution log (default: 50).',
+      },
+      {
         usage: 'cron-run',
-        summary: 'Run scheduled maintenance tasks.',
+        summary: 'Run scheduled maintenance tasks manually.',
       },
     ],
   },
@@ -252,10 +264,34 @@ const COMMAND_HELP = new Map([
     },
   ],
   [
+    'cron-install',
+    {
+      usage: 'cron-install',
+      description: 'Install a cron entry that runs OAuth maintenance every 6 hours. Idempotent — safe to run multiple times.',
+      examples: ['claude-oauth cron-install'],
+    },
+  ],
+  [
+    'cron-status',
+    {
+      usage: 'cron-status',
+      description: 'Show whether the cron job is installed, the last run result from the debug log, and the log file path and size.',
+      examples: ['claude-oauth cron-status'],
+    },
+  ],
+  [
+    'cron-logs',
+    {
+      usage: 'cron-logs [n]',
+      description: 'Print the last N lines of the cron execution log (default: 50). The log captures stdout and stderr of every cron-run execution.',
+      examples: ['claude-oauth cron-logs', 'claude-oauth cron-logs 100'],
+    },
+  ],
+  [
     'cron-run',
     {
       usage: 'cron-run',
-      description: 'Run maintenance tasks, including conditional OAuth refresh and api-reference regeneration.',
+      description: 'Run maintenance tasks manually: conditional OAuth refresh, upstream data collection, user-agent update, api-reference regeneration.',
       examples: ['claude-oauth cron-run'],
     },
   ],
@@ -548,6 +584,23 @@ const runCommand = async (command, args) => {
       }
 
       await runExporter(args[0]);
+      return;
+    }
+    case 'cron-install': {
+      const { installCron } = await loadCronModule();
+      await Promise.resolve(installCron());
+      return;
+    }
+    case 'cron-status': {
+      const { printCronStatus } = await loadCronModule();
+      await Promise.resolve(printCronStatus());
+      return;
+    }
+    case 'cron-logs': {
+      const { printCronLogs } = await loadCronModule();
+      const n = args.length > 0 ? Number.parseInt(args[0], 10) : 50;
+      const lines = Number.isFinite(n) && n > 0 ? n : 50;
+      await Promise.resolve(printCronLogs(lines));
       return;
     }
     case 'cron-run': {
