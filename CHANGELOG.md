@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-04-07
+
+### Fixed
+
+- **add oauth-2025-04-20 to default beta headers in generated plugin** — Without this header Anthropic returns 401 'OAuth authentication is currently not supported' for every API call even with a valid bearer token. Confirmed by inspecting the working reference plugin.
+
+
 ## [0.7.1] - 2026-04-07
 
 ### Fixed
@@ -193,7 +200,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/4i3n6/clw-auth/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/4i3n6/clw-auth/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/4i3n6/clw-auth/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/4i3n6/clw-auth/compare/v0.5.6...v0.6.0
