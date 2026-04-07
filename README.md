@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/4i3n6/clw-auth?color=blue)](https://github.com/4i3n6/clw-auth/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-zero-informational)](package.json)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#install)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#install)
 
 Standalone Anthropic OAuth credential manager. Produces standardized files that any system can consume directly.
 
