@@ -12,6 +12,15 @@ const loadStoreModule = () => import('./store.mjs');
 
 const COMMAND_GROUPS = [
   {
+    title: 'Setup',
+    commands: [
+      {
+        usage: 'auth-setup',
+        summary: 'Interactive wizard: authenticate and export to OpenCode or OpenClaw.',
+      },
+    ],
+  },
+  {
     title: 'Core',
     commands: [
       {
@@ -133,6 +142,14 @@ const COMMAND_GROUPS = [
 ];
 
 const COMMAND_HELP = new Map([
+  [
+    'auth-setup',
+    {
+      usage: 'auth-setup',
+      description: 'Launch the interactive TUI setup wizard. Guides through tool selection (OpenCode / OpenClaw / Both), authentication (OAuth or API key), and credential export.',
+      examples: ['clw-auth auth-setup'],
+    },
+  ],
   [
     'oauth-url',
     {
@@ -501,6 +518,14 @@ const runCommand = async (command, args) => {
   const resolvedCommand = resolveCommandName(command);
 
   switch (resolvedCommand) {
+    case 'auth-setup': {
+      const { spawnSync } = await import('node:child_process');
+      const { fileURLToPath: fu } = await import('node:url');
+      const tuiPath = fu(new URL('../scripts/auth-tui.mjs', import.meta.url));
+      const result = spawnSync(process.execPath, [tuiPath], { stdio: 'inherit' });
+      process.exit(result.status ?? 0);
+      return;
+    }
     case 'oauth-url': {
       const { buildOauthUrl } = await loadAuthModule();
       console.log(buildOauthUrl());
