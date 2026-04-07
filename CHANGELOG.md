@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-04-07
+
+### Fixed
+
+- **always inject oauth-2025-04-20 regardless of api-reference.json** — The betaHeaders in the generated plugin came from api-reference.json via extractRuntimeConfigDefaults(). DEFAULT_RUNTIME_CONFIG is only the fallback when api-reference.json has no betaHeaders at all — but since it already had ['interleaved-thinking-2025-05-14'], the v0.7.2 default fix had no effect. Root cause: oauth-2025-04-20 is a mandatory header for Anthropic OAuth bearer token requests. Without it the API always returns 401 regardless of token validity. It must be enforced at export time, not left to api-reference.json. Fix: merge OAUTH_REQUIRED_BETAS into runtimeConfig.betaHeaders in run() before generating the plugin, unconditionally.
+
+
 ## [0.7.2] - 2026-04-07
 
 ### Fixed
@@ -200,7 +207,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/4i3n6/clw-auth/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/4i3n6/clw-auth/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/4i3n6/clw-auth/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/4i3n6/clw-auth/compare/v0.6.0...v0.7.0
