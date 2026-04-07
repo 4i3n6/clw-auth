@@ -85,6 +85,10 @@ export function getCronLockPath() {
   return join(getDataDir(), 'cron.lock');
 }
 
+export function getCronLogPath() {
+  return join(getDataDir(), 'cron.log');
+}
+
 export function getDebugLogPath() {
   return join(getDataDir(), 'debug.log');
 }
