@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const BIN_NAME = 'claude-oauth';
+const BIN_NAME = 'clw-auth';
 
 const loadAuthModule = () => import('./auth.mjs');
 const loadConfigModule = () => import('./config.mjs');
@@ -138,7 +138,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'oauth-url',
       description: 'Generate the browser login URL for Claude OAuth.',
-      examples: ['claude-oauth oauth-url'],
+      examples: ['clw-auth oauth-url'],
     },
   ],
   [
@@ -147,8 +147,8 @@ const COMMAND_HELP = new Map([
       usage: 'oauth-exchange <code#state|callback-url>',
       description: 'Exchange the browser callback payload for OAuth credentials and regenerate api-reference.json.',
       examples: [
-        'claude-oauth oauth-exchange "code#state"',
-        'claude-oauth oauth-exchange "https://platform.claude.com/oauth/code/callback?code=...#state=..."',
+        'clw-auth oauth-exchange "code#state"',
+        'clw-auth oauth-exchange "https://platform.claude.com/oauth/code/callback?code=...#state=..."',
       ],
     },
   ],
@@ -158,7 +158,7 @@ const COMMAND_HELP = new Map([
       usage: 'oauth-refresh',
       description: 'Refresh stored OAuth credentials immediately and regenerate api-reference.json.',
       aliases: ['refresh'],
-      examples: ['claude-oauth oauth-refresh', 'claude-oauth refresh'],
+      examples: ['clw-auth oauth-refresh', 'clw-auth refresh'],
     },
   ],
   [
@@ -166,7 +166,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'status',
       description: 'Print the current Anthropic auth mode, token presence, and expiry details.',
-      examples: ['claude-oauth status'],
+      examples: ['clw-auth status'],
     },
   ],
   [
@@ -174,7 +174,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'doctor',
       description: 'Run status, api-ref, config, and sources in one grouped report.',
-      examples: ['claude-oauth doctor'],
+      examples: ['clw-auth doctor'],
     },
   ],
   [
@@ -182,7 +182,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'api <anthropic-api-key>',
       description: 'Store an Anthropic API key and regenerate api-reference.json.',
-      examples: ['claude-oauth api "$ANTHROPIC_API_KEY"'],
+      examples: ['clw-auth api "$ANTHROPIC_API_KEY"'],
     },
   ],
   [
@@ -190,7 +190,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'api-ref',
       description: 'Print the persisted api-reference.json payload.',
-      examples: ['claude-oauth api-ref'],
+      examples: ['clw-auth api-ref'],
     },
   ],
   [
@@ -198,7 +198,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'api-ref-update',
       description: 'Regenerate api-reference.json from the current auth and config state.',
-      examples: ['claude-oauth api-ref-update'],
+      examples: ['clw-auth api-ref-update'],
     },
   ],
   [
@@ -206,7 +206,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'config',
       description: 'Print the persisted runtime config.',
-      examples: ['claude-oauth config'],
+      examples: ['clw-auth config'],
     },
   ],
   [
@@ -215,8 +215,8 @@ const COMMAND_HELP = new Map([
       usage: 'set-betas <csv|none>',
       description: 'Update anthropic-beta headers in runtime config.',
       examples: [
-        'claude-oauth set-betas "interleaved-thinking-2025-05-14"',
-        'claude-oauth set-betas none',
+        'clw-auth set-betas "interleaved-thinking-2025-05-14"',
+        'clw-auth set-betas none',
       ],
     },
   ],
@@ -226,8 +226,8 @@ const COMMAND_HELP = new Map([
       usage: 'set-user-agent <ua|default>',
       description: 'Update the runtime User-Agent string or restore the default value.',
       examples: [
-        'claude-oauth set-user-agent "claude-cli/2.1.81 (external, cli)"',
-        'claude-oauth set-user-agent default',
+        'clw-auth set-user-agent "claude-cli/2.1.81 (external, cli)"',
+        'clw-auth set-user-agent default',
       ],
     },
   ],
@@ -236,7 +236,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'config-reset',
       description: 'Reset runtime config to built-in defaults.',
-      examples: ['claude-oauth config-reset'],
+      examples: ['clw-auth config-reset'],
     },
   ],
   [
@@ -244,7 +244,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'upstream-check',
       description: 'Fetch monitored upstream sources and compare them with local runtime config.',
-      examples: ['claude-oauth upstream-check'],
+      examples: ['clw-auth upstream-check'],
     },
   ],
   [
@@ -252,7 +252,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'sources',
       description: 'Print the upstream URLs monitored by this project.',
-      examples: ['claude-oauth sources'],
+      examples: ['clw-auth sources'],
     },
   ],
   [
@@ -260,7 +260,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'export [system]',
       description: 'Without an argument, list exporters. With a system name, run that exporter.',
-      examples: ['claude-oauth export', 'claude-oauth export system-name'],
+      examples: ['clw-auth export', 'clw-auth export system-name'],
     },
   ],
   [
@@ -268,7 +268,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'cron-install',
       description: 'Install a cron entry that runs OAuth maintenance every 6 hours. Idempotent — safe to run multiple times.',
-      examples: ['claude-oauth cron-install'],
+      examples: ['clw-auth cron-install'],
     },
   ],
   [
@@ -276,7 +276,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'cron-status',
       description: 'Show whether the cron job is installed, the last run result from the debug log, and the log file path and size.',
-      examples: ['claude-oauth cron-status'],
+      examples: ['clw-auth cron-status'],
     },
   ],
   [
@@ -284,7 +284,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'cron-logs [n]',
       description: 'Print the last N lines of the cron execution log (default: 50). The log captures stdout and stderr of every cron-run execution.',
-      examples: ['claude-oauth cron-logs', 'claude-oauth cron-logs 100'],
+      examples: ['clw-auth cron-logs', 'clw-auth cron-logs 100'],
     },
   ],
   [
@@ -292,7 +292,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'cron-run',
       description: 'Run maintenance tasks manually: conditional OAuth refresh, upstream data collection, user-agent update, api-reference regeneration.',
-      examples: ['claude-oauth cron-run'],
+      examples: ['clw-auth cron-run'],
     },
   ],
   [
@@ -300,7 +300,7 @@ const COMMAND_HELP = new Map([
     {
       usage: 'help [command]',
       description: 'Show grouped help or help for a specific command.',
-      examples: ['claude-oauth help', 'claude-oauth help status'],
+      examples: ['clw-auth help', 'clw-auth help status'],
     },
   ],
 ]);
