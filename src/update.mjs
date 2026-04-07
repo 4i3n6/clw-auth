@@ -81,11 +81,10 @@ export async function runUpdate() {
   }
 
   try {
-    git(['reset', '--hard', '--quiet']);
-    git(['checkout', '--force', '--quiet', newest]);
+    git(['reset', '--hard', '--quiet', newest]);
   } catch (error) {
     console.error(`Update failed: ${error instanceof Error ? error.message : String(error)}`);
-    console.error(`Try manually: git -C "${INSTALL_DIR}" reset --hard && git -C "${INSTALL_DIR}" checkout ${newest}`);
+    console.error(`Try manually: git -C "${INSTALL_DIR}" reset --hard ${newest}`);
     return;
   }
 
