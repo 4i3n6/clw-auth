@@ -219,15 +219,21 @@ function updateOpenClawConfig() {
  * Syncs clw-auth credentials into one or more OpenClaw agent profile stores
  * and updates the global OpenClaw config so models appear in 'openclaw models list'.
  *
- * @param {{ agentId?: string } | undefined} options
+ * @param {{ agentId?: string, allConfigured?: boolean } | undefined} options
+ *   allConfigured: if true, silently exports to every agent that already has
+ *   an anthropic:default profile — no prompt, no output. Used by the cron auto-sync.
  */
 export async function run(options = {}) {
   const auth    = validateConfiguredAuth(loadAuth());
   const profile = buildProfile(auth);
 
   let selectedAgents;
+  const silent = options.allConfigured === true;
 
-  if (typeof options.agentId === 'string' && options.agentId.trim()) {
+  if (silent) {
+    selectedAgents = listAgents().filter(agentHasAnthropicProfile);
+    if (selectedAgents.length === 0) return [];
+  } else if (typeof options.agentId === 'string' && options.agentId.trim()) {
     selectedAgents = [options.agentId.trim()];
   } else {
     const agents = listAgents();
@@ -239,29 +245,36 @@ export async function run(options = {}) {
   for (const agentId of selectedAgents) {
     try {
       const path = exportToAgent(agentId, profile);
-      console.log(`\n✔  ${agentId}`);
-      console.log(`   ${path}`);
+      if (!silent) {
+        console.log(`\n✔  ${agentId}`);
+        console.log(`   ${path}`);
+      }
       results.push({ agentId, path, ok: true });
     } catch (error) {
-      console.error(`\n✖  ${agentId}: ${error instanceof Error ? error.message : String(error)}`);
+      if (!silent) {
+        console.error(`\n✖  ${agentId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
       results.push({ agentId, ok: false });
     }
   }
 
-  const succeeded = results.filter((r) => r.ok).length;
-  const failed    = results.length - succeeded;
+  if (!silent) {
+    const succeeded = results.filter((r) => r.ok).length;
+    const failed    = results.length - succeeded;
 
-  console.log(`\nExported to ${succeeded} agent${succeeded !== 1 ? 's' : ''}.${failed > 0 ? ` ${failed} failed.` : ''}`);
-  console.log(`Profile: ${OPENCLAW_PROFILE_NAME}  |  Auth type: ${profile.type}`);
+    console.log(`\nExported to ${succeeded} agent${succeeded !== 1 ? 's' : ''}.${failed > 0 ? ` ${failed} failed.` : ''}`);
+    console.log(`Profile: ${OPENCLAW_PROFILE_NAME}  |  Auth type: ${profile.type}`);
 
-  // Update ~/.openclaw/openclaw.json fallbacks so models appear in 'openclaw models list'.
-  const configUpdate = updateOpenClawConfig();
+    const configUpdate = updateOpenClawConfig();
 
-  if (configUpdate.added.length > 0) {
-    console.log(`\n✔  Added to openclaw.json fallbacks: ${configUpdate.added.join(', ')}`);
-    console.log(`   Run: openclaw gateway restart`);
+    if (configUpdate.added.length > 0) {
+      console.log(`\n✔  Added to openclaw.json fallbacks: ${configUpdate.added.join(', ')}`);
+      console.log(`   Run: openclaw gateway restart`);
+    } else {
+      console.log(`\n✔  openclaw.json fallbacks already up to date.`);
+    }
   } else {
-    console.log(`\n✔  openclaw.json fallbacks already up to date.`);
+    updateOpenClawConfig();
   }
 
   return results;
