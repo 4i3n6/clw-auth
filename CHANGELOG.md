@@ -44,11 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cron maintenance orchestrator** with file-based concurrency lock (`cron.lock`, 24h TTL, OS-level atomic `wx` flag).
 - **`setup-cron.mjs`** — idempotent cron installer (runs every 6 hours).
 - **Exporter system** with registry pattern (`Map`-based). Exporters are isolated from CLI core.
-- **OpenCode exporter** — syncs credentials to `~/.local/share/opencode/auth.json`, generates a self-contained Anthropic auth plugin at `~/.config/opencode/plugins/claude-oauth-anthropic.mjs`, and patches `opencode.json` to include the plugin.
+- **OpenCode exporter** — syncs credentials to `~/.local/share/opencode/auth.json`, generates a self-contained Anthropic auth plugin at `~/.config/opencode/plugins/clw-auth-anthropic.mjs`, and patches `opencode.json` to include the plugin.
 - **OpenClaw exporter** — syncs OAuth or API key credentials to `~/.openclaw/agents/<agentId>/agent/auth-profiles.json` under the `anthropic:default` profile key.
 - **Full CLI** with grouped help, per-command help, and command aliases. All modules loaded via dynamic import to minimize startup cost.
 - **`doctor` command** — single-pass diagnostic report combining status, api-ref, config, and upstream sources.
-- **JSONL debug log** at `~/.local/share/claude-oauth/debug.log` (mode `600`). Credentials never logged.
+- **JSONL debug log** at `~/.local/share/clw-auth/debug.log` (mode `600`). Credentials never logged.
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 

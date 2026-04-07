@@ -25,7 +25,7 @@ clw-auth auth-setup
 ## What it does
 
 1. Authenticates via OAuth 2.0 PKCE or API key
-2. Persists tokens at `~/.local/share/claude-oauth/auth.json`
+2. Persists tokens at `~/.local/share/clw-auth/auth.json`
 3. Generates `api-reference.json` with endpoint, headers, and authorization ready to use
 4. Automatically renews tokens via cron
 5. Monitors user-agent and beta header drift against official Anthropic docs
@@ -47,7 +47,7 @@ clw-auth (this project)
     +--> any system reads and uses
 ```
 
-No system is special. This project produces standardized files in `~/.local/share/claude-oauth/`. Any consumer reads them directly — no plugin, no patch, no coupling.
+No system is special. This project produces standardized files in `~/.local/share/clw-auth/`. Any consumer reads them directly — no plugin, no patch, no coupling.
 
 ## Requirements
 
@@ -78,7 +78,7 @@ clw-auth/
   package.json
 ```
 
-## Output files (`~/.local/share/claude-oauth/`)
+## Output files (`~/.local/share/clw-auth/`)
 
 | File | Permission | Description |
 |---|---|---|
@@ -207,7 +207,7 @@ clw-auth export opencode
 ```
 
 - Copies OAuth credentials to `~/.local/share/opencode/auth.json`
-- Generates Anthropic auth plugin at `~/.config/opencode/plugins/claude-oauth-anthropic.mjs`
+- Generates Anthropic auth plugin at `~/.config/opencode/plugins/clw-auth-anthropic.mjs`
 - Patches `~/.config/opencode/opencode.json` to register the plugin
 
 ### OpenClaw
