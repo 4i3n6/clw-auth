@@ -5,11 +5,11 @@ import { loadAuth, saveAuth, debugLog } from './store.mjs';
 
 const AUTHORIZE_URL = 'https://claude.ai/oauth/authorize';
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
-const REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback';
+const REDIRECT_URI = 'https://console.anthropic.com/oauth/code/callback';
 const SCOPE = 'org:create_api_key user:profile user:inference';
 const TOKEN_ENDPOINTS = [
-  'https://platform.claude.com/v1/oauth/token',
   'https://console.anthropic.com/v1/oauth/token',
+  'https://platform.claude.com/v1/oauth/token',
 ];
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
 const FETCH_TIMEOUT_MS = 15000;
@@ -201,6 +201,7 @@ const exchangeWithRetry = async (endpoint, payload) => {
         headers: {
           accept: 'application/json',
           'content-type': 'application/x-www-form-urlencoded',
+          'user-agent': 'claude-cli/2.1.92 (external, cli)',
         },
         body: new URLSearchParams(payload).toString(),
         signal: controller.signal,
