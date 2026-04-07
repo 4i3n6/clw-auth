@@ -5,11 +5,11 @@ import { loadAuth, saveAuth, debugLog } from './store.mjs';
 
 const AUTHORIZE_URL = 'https://claude.ai/oauth/authorize';
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
-const REDIRECT_URI = 'https://console.anthropic.com/oauth/code/callback';
+const REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback';
 const SCOPE = 'org:create_api_key user:profile user:inference';
 const TOKEN_ENDPOINTS = [
-  'https://console.anthropic.com/v1/oauth/token',
   'https://platform.claude.com/v1/oauth/token',
+  'https://console.anthropic.com/v1/oauth/token',
 ];
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
 const FETCH_TIMEOUT_MS = 15000;
@@ -199,11 +199,9 @@ const exchangeWithRetry = async (endpoint, payload) => {
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          accept: 'application/json',
-          'content-type': 'application/x-www-form-urlencoded',
-          'user-agent': 'claude-cli/2.1.92 (external, cli)',
+          'content-type': 'application/json',
         },
-        body: new URLSearchParams(payload).toString(),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
       const responsePayload = await parseTokenResponse(response);
@@ -259,18 +257,16 @@ const exchangeWithRetry = async (endpoint, payload) => {
 export const buildOauthUrl = () => {
   const verifier = base64url(randomBytes(64));
   const codeChallenge = base64url(sha256(verifier));
-  const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
-    redirect_uri: REDIRECT_URI,
-    response_type: 'code',
-    scope: SCOPE,
-    state: verifier,
-  });
   const url = new URL(AUTHORIZE_URL);
 
-  url.search = params.toString();
+  url.searchParams.set('code', 'true');
+  url.searchParams.set('client_id', CLIENT_ID);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('redirect_uri', REDIRECT_URI);
+  url.searchParams.set('scope', SCOPE);
+  url.searchParams.set('code_challenge', codeChallenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set('state', verifier);
 
   return url.toString();
 };
@@ -346,11 +342,12 @@ export const oauthExchange = async (pastedInput) => {
   const normalizedInput = normalizePastedInput(pastedInput);
   const { code, state } = splitCodeAndState(normalizedInput);
   const tokenResponse = await requestTokens({
-    client_id: CLIENT_ID,
     code,
-    code_verifier: state,
+    state,
     grant_type: 'authorization_code',
+    client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
+    code_verifier: state,
   });
   const auth = buildOauthCredential(tokenResponse);
 
