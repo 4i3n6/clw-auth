@@ -16,7 +16,7 @@ const COMMAND_GROUPS = [
     title: 'Setup',
     commands: [
       {
-        usage: 'auth-setup',
+        usage: 'tui',
         summary: 'Interactive wizard: authenticate and export to OpenCode or OpenClaw.',
       },
       {
@@ -148,11 +148,11 @@ const COMMAND_GROUPS = [
 
 const COMMAND_HELP = new Map([
   [
-    'auth-setup',
+    'tui',
     {
-      usage: 'auth-setup',
-      description: 'Launch the interactive TUI setup wizard. Guides through tool selection (OpenCode / OpenClaw / Both), authentication (OAuth or API key), and credential export.',
-      examples: ['clw-auth auth-setup'],
+      usage: 'tui',
+      description: 'Launch the interactive TUI setup wizard. Guides through tool selection (OpenCode / OpenClaw / Both), authentication (OAuth or API key), and credential export. Alias: auth-setup.',
+      examples: ['clw-auth tui'],
     },
   ],
   [
@@ -336,7 +336,8 @@ const COMMAND_HELP = new Map([
 ]);
 
 const COMMAND_ALIASES = new Map([
-  ['refresh', 'oauth-refresh'],
+  ['refresh',    'oauth-refresh'],
+  ['auth-setup', 'tui'],
 ]);
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -536,7 +537,7 @@ const runCommand = async (command, args) => {
       await runUpdate();
       return;
     }
-    case 'auth-setup': {
+    case 'tui': {
       const { spawnSync } = await import('node:child_process');
       const { fileURLToPath: fu } = await import('node:url');
       const tuiPath = fu(new URL('../scripts/auth-tui.mjs', import.meta.url));
