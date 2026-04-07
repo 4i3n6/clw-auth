@@ -6,9 +6,9 @@ const DEFAULT_USER_AGENT = 'claude-cli/%VERSION% (external, cli)';
 const GA_HINT_PATTERN = /(generally available|no longer required)/i;
 
 export const UPSTREAM_SOURCES = Object.freeze([
-  'https://docs.anthropic.com/en/api/beta-headers',
-  'https://docs.anthropic.com/en/release-notes/api',
-  'https://docs.anthropic.com/en/release-notes/claude-code',
+  'https://platform.claude.com/docs/en/api/beta-headers',
+  'https://platform.claude.com/docs/en/release-notes/overview',
+  'https://raw.githubusercontent.com/anthropics/claude-code/refs/heads/main/CHANGELOG.md',
 ]);
 
 const SOURCE_URLS = Object.freeze({

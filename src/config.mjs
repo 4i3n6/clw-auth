@@ -10,7 +10,7 @@ const DEFAULT_BETA_HEADERS = Object.freeze([
 export const DEFAULT_CONFIG = Object.freeze({
   schemaVersion: 1,
   betaHeaders: DEFAULT_BETA_HEADERS,
-  userAgent: 'claude-cli/2.1.2 (external, cli)',
+  userAgent: 'claude-cli/2.1.92 (external, cli)',
 });
 
 /**
