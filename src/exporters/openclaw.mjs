@@ -1,7 +1,7 @@
+import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 
 import {
   loadAuth,
@@ -9,11 +9,18 @@ import {
 } from '../store.mjs';
 
 const AUTH_PROFILES_SCHEMA_VERSION = 1;
+const OPENCLAW_AGENTS_DIR = join(homedir(), '.openclaw', 'agents');
+
+export const DESCRIPTION = 'Sync clw-auth credentials into OpenClaw auth profiles.';
+
+const OPENCLAW_PROFILE_NAME = 'anthropic:default';
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 function loadJsonSafe(filePath) {
-  if (!existsSync(filePath)) {
-    return {};
-  }
+  if (!existsSync(filePath)) return {};
 
   try {
     const raw = readFileSync(filePath, 'utf8');
@@ -23,41 +30,73 @@ function loadJsonSafe(filePath) {
   }
 }
 
-export const DESCRIPTION = 'Sync clw-auth credentials into OpenClaw auth profiles.';
-
-const DEFAULT_AGENT_ID = 'default';
-const OPENCLAW_PROFILE_NAME = 'anthropic:default';
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function resolveAgentId(options = {}) {
-  if (!isPlainObject(options)) {
-    throw new Error('OpenClaw exporter options must be a JSON object when provided.');
-  }
-
-  const agentId = typeof options.agentId === 'undefined' ? DEFAULT_AGENT_ID : options.agentId;
-
-  if (typeof agentId !== 'string' || !agentId.trim()) {
-    throw new Error('OpenClaw exporter agentId must be a non-empty string.');
-  }
-
-  const normalizedAgentId = agentId.trim();
-
-  if (normalizedAgentId.includes('/') || normalizedAgentId.includes('\\')) {
-    throw new Error('OpenClaw exporter agentId must not contain path separators.');
-  }
-
-  if (normalizedAgentId === '.' || normalizedAgentId === '..') {
-    throw new Error('OpenClaw exporter agentId must not be a relative path segment.');
-  }
-
-  return normalizedAgentId;
-}
-
 function getAuthProfilesPath(agentId) {
-  return join(homedir(), '.openclaw', 'agents', agentId, 'agent', 'auth-profiles.json');
+  return join(OPENCLAW_AGENTS_DIR, agentId, 'agent', 'auth-profiles.json');
+}
+
+function listAgents() {
+  if (!existsSync(OPENCLAW_AGENTS_DIR)) return [];
+
+  return readdirSync(OPENCLAW_AGENTS_DIR, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .sort();
+}
+
+function agentHasAnthropicProfile(agentId) {
+  const store = loadJsonSafe(getAuthProfilesPath(agentId));
+  return isPlainObject(store.profiles) && OPENCLAW_PROFILE_NAME in store.profiles;
+}
+
+function prompt(question) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+
+  return new Promise((resolve) => {
+    rl.on('SIGINT', () => {
+      rl.close();
+      console.log('\nCancelled.');
+      process.exit(0);
+    });
+
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+async function selectAgents(agents) {
+  if (agents.length === 0) {
+    throw new Error(
+      `No OpenClaw agents found at ${OPENCLAW_AGENTS_DIR}.\n` +
+      'Create an agent in OpenClaw first, then re-run this command.',
+    );
+  }
+
+  if (agents.length === 1) {
+    console.log(`Found 1 OpenClaw agent: ${agents[0]}`);
+    return agents;
+  }
+
+  console.log(`Found ${agents.length} OpenClaw agents:\n`);
+
+  for (const [i, agentId] of agents.entries()) {
+    const already = agentHasAnthropicProfile(agentId) ? ' (Anthropic already configured)' : '';
+    console.log(`  ${i + 1}.  ${agentId}${already}`);
+  }
+
+  console.log(`  ${agents.length + 1}.  All agents`);
+  console.log('');
+
+  while (true) {
+    const raw = await prompt(`Select agent [1-${agents.length + 1}]: `);
+    const n   = Number.parseInt(raw, 10);
+
+    if (n === agents.length + 1) return agents;
+    if (Number.isFinite(n) && n >= 1 && n <= agents.length) return [agents[n - 1]];
+
+    console.log(`  Invalid selection — enter a number between 1 and ${agents.length + 1}.`);
+  }
 }
 
 export function validateConfiguredAuth(auth) {
@@ -109,24 +148,11 @@ export function buildApiProfile(auth) {
 }
 
 function buildProfile(auth) {
-  if (auth.type === 'oauth') {
-    return buildOauthProfile(auth);
-  }
-
-  return buildApiProfile(auth);
+  return auth.type === 'oauth' ? buildOauthProfile(auth) : buildApiProfile(auth);
 }
 
-/**
- * Syncs clw-auth credentials into the selected OpenClaw agent profile store.
- *
- * @param {{ agentId?: string } | undefined} options
- * @returns {Promise<{ agentId: string, path: string, profileName: string, authType: string }>}
- */
-export async function run(options = {}) {
-  const agentId = resolveAgentId(options);
+function exportToAgent(agentId, profile) {
   const authProfilesPath = getAuthProfilesPath(agentId);
-  const auth = validateConfiguredAuth(loadAuth());
-  const profile = buildProfile(auth);
   const currentStore = loadJsonSafe(authProfilesPath);
 
   if (!isPlainObject(currentStore)) {
@@ -146,16 +172,48 @@ export async function run(options = {}) {
 
   writeJsonAtomic(authProfilesPath, nextStore, 0o600);
 
-  console.log('OpenClaw auth profile synced.');
-  console.log(`- path: ${authProfilesPath}`);
-  console.log(`- profile: ${OPENCLAW_PROFILE_NAME}`);
-  console.log(`- agentId: ${agentId}`);
-  console.log(`- auth type: ${profile.type}`);
+  return authProfilesPath;
+}
 
-  return {
-    agentId,
-    path: authProfilesPath,
-    profileName: OPENCLAW_PROFILE_NAME,
-    authType: profile.type,
-  };
+/**
+ * Syncs clw-auth credentials into one or more OpenClaw agent profile stores.
+ * When no agentId is provided in options, lists available agents and prompts
+ * the user to select which to export to.
+ *
+ * @param {{ agentId?: string } | undefined} options
+ */
+export async function run(options = {}) {
+  const auth    = validateConfiguredAuth(loadAuth());
+  const profile = buildProfile(auth);
+
+  let selectedAgents;
+
+  if (typeof options.agentId === 'string' && options.agentId.trim()) {
+    selectedAgents = [options.agentId.trim()];
+  } else {
+    const agents = listAgents();
+    selectedAgents = await selectAgents(agents);
+  }
+
+  const results = [];
+
+  for (const agentId of selectedAgents) {
+    try {
+      const path = exportToAgent(agentId, profile);
+      console.log(`\n✔  ${agentId}`);
+      console.log(`   ${path}`);
+      results.push({ agentId, path, ok: true });
+    } catch (error) {
+      console.error(`\n✖  ${agentId}: ${error instanceof Error ? error.message : String(error)}`);
+      results.push({ agentId, ok: false });
+    }
+  }
+
+  const succeeded = results.filter((r) => r.ok).length;
+  const failed    = results.length - succeeded;
+
+  console.log(`\nExported to ${succeeded} agent${succeeded !== 1 ? 's' : ''}.${failed > 0 ? ` ${failed} failed.` : ''}`);
+  console.log(`Profile: ${OPENCLAW_PROFILE_NAME}  |  Auth type: ${profile.type}`);
+
+  return results;
 }
