@@ -200,9 +200,9 @@ const exchangeWithRetry = async (endpoint, payload) => {
         method: 'POST',
         headers: {
           accept: 'application/json',
-          'content-type': 'application/json',
+          'content-type': 'application/x-www-form-urlencoded',
         },
-        body: JSON.stringify(payload),
+        body: new URLSearchParams(payload).toString(),
         signal: controller.signal,
       });
       const responsePayload = await parseTokenResponse(response);
