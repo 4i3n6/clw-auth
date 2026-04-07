@@ -108,7 +108,10 @@ function formatVersion({ major, minor, patch }) {
 }
 
 function bump(version, type) {
-  if (type === 'major') return { major: version.major + 1, minor: 0, patch: 0 };
+  const pre = version.major === 0;
+  if (type === 'major') return pre
+    ? { major: 0, minor: version.minor + 1, patch: 0 }
+    : { major: version.major + 1, minor: 0, patch: 0 };
   if (type === 'minor') return { major: version.major, minor: version.minor + 1, patch: 0 };
   return { major: version.major, minor: version.minor, patch: version.patch + 1 };
 }
@@ -235,6 +238,8 @@ function runTests() {
 }
 
 async function main() {
+  const force = process.argv.includes('--force');
+
   const status = git(['status', '--porcelain']);
   if (status) throw new Error('Working tree is not clean. Commit or stash changes first.');
 
@@ -260,7 +265,10 @@ async function main() {
   const commits  = raw.map(parseCommit);
   const failing  = checkQuality(commits);
 
-  if (failing.length > 0) failQuality(failing);
+  if (failing.length > 0 && !force) failQuality(failing);
+  if (failing.length > 0 && force) {
+    process.stdout.write(`Warning: skipping quality check for ${failing.length} commit(s) (--force).\n\n`);
+  }
 
   const currentVersion = parseVersion(lastTag ?? `v${pkg.version}`);
   const bumpType       = detectBumpType(commits);
