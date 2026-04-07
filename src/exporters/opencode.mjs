@@ -265,19 +265,19 @@ function validateOauthAuth(auth) {
   const normalizedAuth = normalizeAuth(auth);
 
   if (normalizedAuth.type !== 'oauth') {
-    throw new Error('OpenCode exporter requires OAuth credentials from claude-oauth auth.json.');
+    throw new Error('OpenCode exporter requires OAuth credentials. Run: clw-auth oauth-url');
   }
 
   if (!normalizedAuth.access) {
-    throw new Error('claude-oauth auth.json is missing the OAuth access token.');
+    throw new Error('auth.json is missing the OAuth access token. Run: clw-auth oauth-url');
   }
 
   if (!normalizedAuth.refresh) {
-    throw new Error('claude-oauth auth.json is missing the OAuth refresh token.');
+    throw new Error('auth.json is missing the OAuth refresh token. Run: clw-auth oauth-url');
   }
 
   if (!Number.isFinite(normalizedAuth.expires) || normalizedAuth.expires <= 0) {
-    throw new Error('claude-oauth auth.json is missing a valid OAuth expiry timestamp.');
+    throw new Error('auth.json is missing a valid OAuth expiry timestamp. Run: clw-auth refresh');
   }
 
   return normalizedAuth;
@@ -1102,7 +1102,7 @@ function writePluginFile(defaultRuntimeConfig) {
 
 function printSummary(summary) {
   console.log('OpenCode exporter completed.');
-  console.log(`- claude-oauth auth type: ${summary.authType}`);
+  console.log(`- clw-auth auth type: ${summary.authType}`);
   console.log(`- OpenCode auth updated: ${summary.auth.path}`);
   console.log(`  - Preserved non-Anthropic providers: ${summary.auth.preservedProviders}`);
   console.log(`- OpenCode plugin generated: ${summary.plugin.path}`);

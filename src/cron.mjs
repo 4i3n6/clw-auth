@@ -349,7 +349,7 @@ export function printCronStatus() {
   if (cronEntry) {
     console.log(`Entry:     ${cronEntry.trim()}`);
   } else {
-    console.log('Install:   claude-oauth cron-install');
+    console.log('Install:   clw-auth cron-install');
   }
 
   console.log('');
@@ -413,7 +413,7 @@ export function printCronLogs(tailLines = 50) {
   if (!existsSync(logPath)) {
     console.log(`No cron log at ${logPath}`);
     console.log('The log is created after the first cron run.');
-    console.log('Trigger manually: claude-oauth cron-run');
+    console.log('Trigger manually: clw-auth cron-run');
     return;
   }
 

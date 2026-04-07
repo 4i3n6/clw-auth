@@ -25,7 +25,7 @@ function loadJsonSafe(filePath) {
   }
 }
 
-export const DESCRIPTION = 'Sync claude-oauth credentials into OpenClaw auth profiles.';
+export const DESCRIPTION = 'Sync clw-auth credentials into OpenClaw auth profiles.';
 
 const DEFAULT_AGENT_ID = 'default';
 const OPENCLAW_PROFILE_NAME = 'anthropic:default';
@@ -64,11 +64,11 @@ function getAuthProfilesPath(agentId) {
 
 function validateConfiguredAuth(auth) {
   if (!isPlainObject(auth)) {
-    throw new Error('claude-oauth auth.json is not configured.');
+    throw new Error('clw-auth auth.json is not configured.');
   }
 
   if (auth.type !== 'oauth' && auth.type !== 'api') {
-    throw new Error('claude-oauth auth.json must contain either OAuth or API credentials.');
+    throw new Error('clw-auth auth.json must contain either OAuth or API credentials.');
   }
 
   return auth;
@@ -78,15 +78,15 @@ function buildOauthProfile(auth) {
   const expires = Number(auth.expires);
 
   if (typeof auth.access !== 'string' || !auth.access) {
-    throw new Error('claude-oauth auth.json is missing the OAuth access token.');
+    throw new Error('clw-auth auth.json is missing the OAuth access token.');
   }
 
   if (typeof auth.refresh !== 'string' || !auth.refresh) {
-    throw new Error('claude-oauth auth.json is missing the OAuth refresh token.');
+    throw new Error('clw-auth auth.json is missing the OAuth refresh token.');
   }
 
   if (!Number.isFinite(expires) || expires <= 0) {
-    throw new Error('claude-oauth auth.json is missing a valid OAuth expiry timestamp.');
+    throw new Error('clw-auth auth.json is missing a valid OAuth expiry timestamp.');
   }
 
   return {
@@ -103,7 +103,7 @@ function buildApiProfile(auth) {
   const key = isPlainObject(rawAuth) && typeof rawAuth.key === 'string' && rawAuth.key ? rawAuth.key : auth.access;
 
   if (typeof key !== 'string' || !key) {
-    throw new Error('claude-oauth auth.json is missing the Anthropic API key.');
+    throw new Error('clw-auth auth.json is missing the Anthropic API key.');
   }
 
   return {
@@ -122,7 +122,7 @@ function buildProfile(auth) {
 }
 
 /**
- * Syncs claude-oauth credentials into the selected OpenClaw agent profile store.
+ * Syncs clw-auth credentials into the selected OpenClaw agent profile store.
  *
  * @param {{ agentId?: string } | undefined} options
  * @returns {Promise<{ agentId: string, path: string, profileName: string, authType: string }>}

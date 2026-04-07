@@ -1,7 +1,7 @@
 import { loadConfig } from './config.mjs';
 
 const FETCH_TIMEOUT_MS = 15_000;
-const MONITOR_USER_AGENT = 'claude-oauth/1.0';
+const MONITOR_USER_AGENT = 'clw-auth/1.0';
 const DEFAULT_USER_AGENT = 'claude-cli/%VERSION% (external, cli)';
 const GA_HINT_PATTERN = /(generally available|no longer required)/i;
 

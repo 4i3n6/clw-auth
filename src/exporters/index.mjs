@@ -3,7 +3,7 @@ import { DESCRIPTION as openclawDescription, run as runOpenclaw } from './opencl
 
 const opencodeExporter = Object.freeze({
   name: 'opencode',
-  description: 'Sync claude-oauth auth and Anthropic plugin into OpenCode.',
+  description: 'Sync clw-auth credentials and Anthropic plugin into OpenCode.',
   run: runOpencode,
 });
 
