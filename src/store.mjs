@@ -9,16 +9,18 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 
-const DATA_DIR = join(homedir(), '.local', 'share', 'clw-auth');
+const DATA_DIR = process.env.CLW_DATA_DIR
+  ? resolve(process.env.CLW_DATA_DIR)
+  : join(homedir(), '.local', 'share', 'clw-auth');
 
 function ensureParent(filePath) {
   mkdirSync(dirname(filePath), { recursive: true });
 }
 
-function normalizeAuth(auth) {
+export function normalizeAuth(auth) {
   if (!auth || typeof auth !== 'object' || Array.isArray(auth)) {
     return {};
   }
