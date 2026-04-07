@@ -1,13 +1,18 @@
+import { execSync, spawnSync } from 'node:child_process';
 import {
   existsSync,
   readFileSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { getAuth, oauthRefresh, shouldRefreshOauth } from './auth.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
-import { debugLog, getCronLockPath } from './store.mjs';
+import { debugLog, getCronLockPath, getCronLogPath, getDebugLogPath } from './store.mjs';
+
+const CLI_PATH = fileURLToPath(new URL('./cli.mjs', import.meta.url));
 
 const CRON_LOCK_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -301,4 +306,126 @@ export async function runCron() {
   } finally {
     releaseCronLock();
   }
+}
+
+export function installCron() {
+  const logPath = getCronLogPath();
+  const cronLine = `0 */6 * * * node "${CLI_PATH}" cron-run >> "${logPath}" 2>&1`;
+
+  let current = '';
+  try {
+    current = execSync('crontab -l 2>/dev/null', { encoding: 'utf8' });
+  } catch { /* no existing crontab */ }
+
+  const existingEntry = current.split('\n').find((l) => l.includes('claude-oauth') && !l.trim().startsWith('#'));
+
+  if (existingEntry) {
+    console.log('Cron entry already installed. No changes made.');
+    console.log(`Entry: ${existingEntry.trim()}`);
+    return;
+  }
+
+  const next = `${current.trimEnd()}\n${cronLine}\n`.trimStart();
+  const result = spawnSync('crontab', ['-'], { input: next, stdio: ['pipe', 'inherit', 'inherit'] });
+
+  if (result.status !== 0) {
+    throw new Error('Failed to install cron entry. Check crontab access.');
+  }
+
+  console.log('Cron entry installed.');
+  console.log(`Entry:  ${cronLine}`);
+  console.log(`Logs:   ${logPath}`);
+}
+
+export function printCronStatus() {
+  let cronEntry = null;
+  try {
+    const crontab = execSync('crontab -l 2>/dev/null', { encoding: 'utf8' });
+    cronEntry = crontab.split('\n').find((l) => l.includes('claude-oauth') && !l.trim().startsWith('#')) || null;
+  } catch { /* no crontab */ }
+
+  console.log(`Installed: ${cronEntry ? 'yes' : 'no'}`);
+
+  if (cronEntry) {
+    console.log(`Entry:     ${cronEntry.trim()}`);
+  } else {
+    console.log('Install:   claude-oauth cron-install');
+  }
+
+  console.log('');
+
+  const debugLogPath = getDebugLogPath();
+
+  if (existsSync(debugLogPath)) {
+    const lines = readFileSync(debugLogPath, 'utf8').split('\n').filter(Boolean);
+
+    const findLast = (event) => [...lines].reverse().find((l) => {
+      try { return JSON.parse(l).event === event; } catch { return false; }
+    });
+
+    const lastOk   = findLast('cron-run-completed');
+    const lastFail = findLast('cron-run-failed');
+
+    if (lastOk) {
+      try {
+        const entry = JSON.parse(lastOk);
+        console.log(`Last run:  ${entry.ts} (ok)`);
+        if (Array.isArray(entry.details?.actions)) {
+          for (const action of entry.details.actions) console.log(`           - ${action}`);
+        }
+      } catch { /* ignore */ }
+    } else if (lastFail) {
+      try {
+        const entry = JSON.parse(lastFail);
+        console.log(`Last run:  ${entry.ts} (failed)`);
+        if (entry.details?.error) console.log(`           Error: ${entry.details.error}`);
+      } catch { /* ignore */ }
+    } else {
+      console.log('Last run:  not found in debug log.');
+    }
+  } else {
+    console.log('Last run:  no debug log found yet.');
+  }
+
+  console.log('');
+
+  const lockPath = getCronLockPath();
+  if (existsSync(lockPath)) {
+    const ts = readCronLockTimestamp(lockPath);
+    const stale = ts !== null && ts < (Date.now() - CRON_LOCK_TTL_MS);
+    console.log(`Lock:      ${stale ? 'stale (cleared on next run)' : 'active — cron is running'}`);
+  }
+
+  const logPath = getCronLogPath();
+  console.log(`Log:       ${logPath}`);
+
+  if (existsSync(logPath)) {
+    const { size } = statSync(logPath);
+    console.log(`Log size:  ${(size / 1024).toFixed(1)} KB`);
+  } else {
+    console.log('Log size:  not created yet');
+  }
+}
+
+export function printCronLogs(tailLines = 50) {
+  const logPath = getCronLogPath();
+
+  if (!existsSync(logPath)) {
+    console.log(`No cron log at ${logPath}`);
+    console.log('The log is created after the first cron run.');
+    console.log('Trigger manually: claude-oauth cron-run');
+    return;
+  }
+
+  const all = readFileSync(logPath, 'utf8').split('\n');
+  const n   = Math.min(tailLines, all.length);
+  const out = all.slice(-n).join('\n').trim();
+
+  if (!out) {
+    console.log('Log file is empty.');
+    return;
+  }
+
+  console.log(`=== ${logPath} (last ${n} lines) ===\n`);
+  console.log(out);
 }
