@@ -1,12 +1,29 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { existsSync, readFileSync } from 'node:fs';
+
 import {
   getAuthPath,
   loadAuth,
   loadJson,
   writeJsonAtomic,
 } from '../store.mjs';
+
+const AUTH_PROFILES_SCHEMA_VERSION = 1;
+
+function loadJsonSafe(filePath) {
+  if (!existsSync(filePath)) {
+    return {};
+  }
+
+  try {
+    const raw = readFileSync(filePath, 'utf8');
+    return raw.trim() ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
 
 export const DESCRIPTION = 'Sync claude-oauth credentials into OpenClaw auth profiles.';
 
@@ -115,19 +132,16 @@ export async function run(options = {}) {
   const authProfilesPath = getAuthProfilesPath(agentId);
   const auth = validateConfiguredAuth(loadAuth());
   const profile = buildProfile(auth);
-  const currentStore = loadJson(authProfilesPath);
+  const currentStore = loadJsonSafe(authProfilesPath);
 
   if (!isPlainObject(currentStore)) {
     throw new Error(`OpenClaw auth profiles file must contain a JSON object: ${authProfilesPath}`);
   }
 
-  const currentProfiles = typeof currentStore.profiles === 'undefined' ? {} : currentStore.profiles;
-
-  if (!isPlainObject(currentProfiles)) {
-    throw new Error(`OpenClaw auth profiles file must contain a "profiles" object: ${authProfilesPath}`);
-  }
+  const currentProfiles = isPlainObject(currentStore.profiles) ? currentStore.profiles : {};
 
   const nextStore = {
+    version: typeof currentStore.version === 'number' ? currentStore.version : AUTH_PROFILES_SCHEMA_VERSION,
     ...currentStore,
     profiles: {
       ...currentProfiles,
