@@ -21,7 +21,7 @@ const OPENCODE_PLUGIN_PATH = join(homedir(), '.config', 'opencode', 'plugins', '
 const OPENCODE_SCHEMA_URL = 'https://opencode.ai/config.json';
 const DEFAULT_RUNTIME_CONFIG = Object.freeze({
   schemaVersion: 1,
-  betaHeaders: ['interleaved-thinking-2025-05-14'],
+  betaHeaders: ['oauth-2025-04-20', 'interleaved-thinking-2025-05-14'],
   userAgent: 'claude-cli/2.1.92 (external, cli)',
 });
 const OH_MY_PLUGIN_ANCHORS = new Set(['oh-my-opencode@latest', 'oh-my-openagent@latest']);
