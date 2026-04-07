@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-04-07
+
+### Fixed
+
+- **update openclaw.json fallbacks to register Claude models** — The root cause of 'openclaw models list' not showing Claude was that models must be in agents.defaults.model.fallbacks in ~/.openclaw/openclaw.json to appear in the list. auth-profiles.json provides credentials but does NOT trigger model discovery — the model selection list is driven by explicit fallback configuration in the global config. Changes: - Add updateOpenClawConfig() that appends Claude fallbacks to agents.defaults.model.fallbacks in openclaw.json (idempotent) - Call it automatically at the end of run() with a gateway restart hint - Remove ANTHROPIC_MODELS_PROVIDER and models.json per-agent writing: that path is for the pi local binary (NON_PI_NATIVE_MODEL_PROVIDERS), not for the openclaw gateway which ignores anthropic in models.providers - Add OPENCLAW_CONFIG_PATH and CLAUDE_FALLBACK_MODELS constants
+
+
 ## [0.7.0] - 2026-04-07
 
 ### Added
@@ -186,7 +193,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/4i3n6/clw-auth/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/4i3n6/clw-auth/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/4i3n6/clw-auth/compare/v0.5.6...v0.6.0
 [0.5.6]: https://github.com/4i3n6/clw-auth/compare/v0.5.5...v0.5.6
