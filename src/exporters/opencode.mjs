@@ -16,12 +16,13 @@ import { loadAuth, loadApiRef } from '../store.mjs';
 const CLAUDE_DATA_DIR = join(homedir(), '.local', 'share', 'claude-oauth');
 const OPENCODE_AUTH_PATH = join(homedir(), '.local', 'share', 'opencode', 'auth.json');
 const OPENCODE_CONFIG_PATH = join(homedir(), '.config', 'opencode', 'opencode.json');
+const OPENCODE_CONFIG_JSONC_PATH = join(homedir(), '.config', 'opencode', 'opencode.jsonc');
 const OPENCODE_PLUGIN_PATH = join(homedir(), '.config', 'opencode', 'plugins', 'claude-oauth-anthropic.mjs');
 const OPENCODE_SCHEMA_URL = 'https://opencode.ai/config.json';
 const DEFAULT_RUNTIME_CONFIG = Object.freeze({
   schemaVersion: 1,
   betaHeaders: ['interleaved-thinking-2025-05-14'],
-  userAgent: 'claude-cli/2.1.2 (external, cli)',
+  userAgent: 'claude-cli/2.1.92 (external, cli)',
 });
 const OH_MY_PLUGIN_ANCHORS = new Set(['oh-my-opencode@latest', 'oh-my-openagent@latest']);
 const LEGACY_PLUGIN_NAME = 'opencode-anthropic-auth-patched.mjs';
@@ -93,6 +94,122 @@ function readJsonFile(filePath, fallbackValue = {}) {
   }
 }
 
+function stripJsonComments(rawText) {
+  let output = '';
+  let i = 0;
+
+  let inString = false;
+  let stringQuote = '';
+  let inEscape = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  while (i < rawText.length) {
+    const current = rawText[i];
+    const next = rawText[i + 1] ?? '';
+
+    if (inLineComment) {
+      if (current === '\n') {
+        inLineComment = false;
+        output += current;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (current === '*' && next === '/') {
+        inBlockComment = false;
+        i += 2;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+
+    if (inString) {
+      output += current;
+      if (inEscape) {
+        inEscape = false;
+        i += 1;
+        continue;
+      }
+
+      if (current === '\\') {
+        inEscape = true;
+      } else if (current === stringQuote) {
+        inString = false;
+      }
+
+      i += 1;
+      continue;
+    }
+
+    if (current === '/' && next === '/') {
+      inLineComment = true;
+      i += 2;
+      continue;
+    }
+
+    if (current === '/' && next === '*') {
+      inBlockComment = true;
+      i += 2;
+      continue;
+    }
+
+    if (current === '"' || current === "'") {
+      inString = true;
+      stringQuote = current;
+    }
+
+    output += current;
+    i += 1;
+  }
+
+  return output;
+}
+
+function normalizeJsoncText(rawText) {
+  const stripped = stripJsonComments(rawText);
+  return stripped.replace(/,\s*([}]|])/g, '$1');
+}
+
+function readJsoncFile(filePath, fallbackValue = {}) {
+  ensureParent(filePath);
+
+  if (!existsSync(filePath)) {
+    return cloneJsonValue(fallbackValue);
+  }
+
+  const rawValue = readFileSync(filePath, 'utf8');
+
+  if (!rawValue.trim()) {
+    return cloneJsonValue(fallbackValue);
+  }
+
+  try {
+    return JSON.parse(rawValue);
+  } catch (error) {
+    try {
+      const normalized = normalizeJsoncText(rawValue);
+      return JSON.parse(normalized);
+    } catch (jsoncError) {
+      const parsedError = jsoncError instanceof Error ? jsoncError.message : String(jsoncError);
+      throw new Error(
+        `Failed to parse JSON/JSONC at ${filePath}: ${error instanceof Error ? error.message : String(error)}; normalized parse: ${parsedError}`,
+      );
+    }
+  }
+}
+
+function resolveOpenCodeConfigPath() {
+  if (existsSync(OPENCODE_CONFIG_JSONC_PATH)) {
+    return OPENCODE_CONFIG_JSONC_PATH;
+  }
+  return OPENCODE_CONFIG_PATH;
+}
+
+
 function writeTextAtomic(filePath, payload, mode = 0o600) {
   ensureParent(filePath);
 
@@ -136,8 +253,9 @@ function normalizeAuth(auth) {
     normalized.refresh = auth.refresh;
   }
 
-  if (typeof auth.expires === 'number' || typeof auth.expires === 'string') {
-    normalized.expires = auth.expires;
+  const expires = Number(auth.expires);
+  if (Number.isFinite(expires)) {
+    normalized.expires = expires;
   }
 
   return normalized;
@@ -145,7 +263,6 @@ function normalizeAuth(auth) {
 
 function validateOauthAuth(auth) {
   const normalizedAuth = normalizeAuth(auth);
-  const expires = Number(normalizedAuth.expires);
 
   if (normalizedAuth.type !== 'oauth') {
     throw new Error('OpenCode exporter requires OAuth credentials from claude-oauth auth.json.');
@@ -159,7 +276,7 @@ function validateOauthAuth(auth) {
     throw new Error('claude-oauth auth.json is missing the OAuth refresh token.');
   }
 
-  if (!Number.isFinite(expires) || expires <= 0) {
+  if (!Number.isFinite(normalizedAuth.expires) || normalizedAuth.expires <= 0) {
     throw new Error('claude-oauth auth.json is missing a valid OAuth expiry timestamp.');
   }
 
@@ -269,10 +386,12 @@ function isPluginReferenceMatch(reference, fileName) {
 }
 
 function patchOpenCodeConfig(pluginUri) {
-  const currentConfig = readJsonFile(OPENCODE_CONFIG_PATH, {});
+  const configPath = resolveOpenCodeConfigPath();
+  const readConfig = configPath.endsWith('.jsonc') ? readJsoncFile : readJsonFile;
+  const currentConfig = readConfig(configPath, {});
 
   if (!isPlainObject(currentConfig)) {
-    throw new Error(`OpenCode config file must contain a JSON object: ${OPENCODE_CONFIG_PATH}`);
+    throw new Error(`OpenCode config file must contain a JSON object: ${configPath}`);
   }
 
   const currentPlugins = Array.isArray(currentConfig.plugin) ? [...currentConfig.plugin] : [];
@@ -311,10 +430,10 @@ function patchOpenCodeConfig(pluginUri) {
     nextConfig.$schema = OPENCODE_SCHEMA_URL;
   }
 
-  writeJsonAtomic(OPENCODE_CONFIG_PATH, nextConfig, 0o600);
+  writeJsonAtomic(configPath, nextConfig, 0o600);
 
   return {
-    path: OPENCODE_CONFIG_PATH,
+    path: configPath,
     pluginUri,
     pluginCount: nextPlugins.length,
     removedLegacyPlugins,
