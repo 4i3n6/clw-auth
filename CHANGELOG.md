@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-07
+
+### Fixed
+
+- **restore executable permission on cli.mjs after git reset** — git reset --hard restores file modes from the index. src/cli.mjs was stored as 100644 (non-executable), causing 'permission denied' after every update. Fixed at three levels: - git index: src/cli.mjs marked 100755 (executable) - update.mjs: chmod +x cli.mjs after reset - install.sh: chmod +x cli.mjs after update reset
+
+
 ## [0.5.0] - 2026-04-07
 
 ### Added
@@ -130,7 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/4i3n6/clw-auth/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/4i3n6/clw-auth/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/4i3n6/clw-auth/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/4i3n6/clw-auth/compare/v0.3.0...v0.4.0
