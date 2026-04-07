@@ -1,11 +1,11 @@
 {
-  "name": "claude-oauth",
+  "name": "clw-auth",
   "version": "0.2.0",
   "description": "Standalone Anthropic OAuth credential manager",
   "type": "module",
   "private": false,
   "bin": {
-    "claude-oauth": "src/cli.mjs"
+    "clw-auth": "src/cli.mjs"
   },
   "scripts": {
     "status": "node src/cli.mjs status",

@@ -3,19 +3,19 @@
 set -eu
 
 # -----------------------------------------------------------------------------
-# claude-oauth installer
+# clw-auth installer
 # https://github.com/4i3n6/clw-auth
 #
 # Supports: macOS, Linux
 # Requires: Node.js >= 18, git, curl
-# Installs: ~/.local/share/clw-auth (repo) + ~/.local/bin/claude-oauth (symlink)
+# Installs: ~/.local/share/clw-auth (repo) + ~/.local/bin/clw-auth (symlink)
 # Idempotent: re-running updates to the latest release.
 # -----------------------------------------------------------------------------
 
 REPO_URL="https://github.com/4i3n6/clw-auth.git"
 INSTALL_DIR="${CLWAUTH_INSTALL_DIR:-$HOME/.local/share/clw-auth}"
 BIN_DIR="${CLWAUTH_BIN_DIR:-$HOME/.local/bin}"
-BIN_NAME="claude-oauth"
+BIN_NAME="clw-auth"
 BIN_PATH="$BIN_DIR/$BIN_NAME"
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ die() {
 # ---------------------------------------------------------------------------
 
 gap
-printf "  ${_bold}${_cyan}claude-oauth${_reset} ${_dim}installer${_reset}\n"
+printf "  ${_bold}${_cyan}clw-auth${_reset} ${_dim}installer${_reset}\n"
 rule
 gap
 
@@ -72,7 +72,7 @@ case "$OS" in
   Linux)  ;;
   *)
     die "Unsupported OS: $OS" \
-        "claude-oauth supports macOS and Linux only." \
+        "clw-auth supports macOS and Linux only." \
         "See https://github.com/4i3n6/clw-auth for manual installation."
     ;;
 esac
@@ -245,7 +245,7 @@ VERSION=$(grep '"version"' "$INSTALL_DIR/package.json" 2>/dev/null \
   | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/' || echo "unknown")
 
 if node "$BIN_PATH" help >/dev/null 2>&1; then
-  ok "claude-oauth v$VERSION is ready."
+  ok "clw-auth v$VERSION is ready."
 else
   warn "Installed but could not verify — check that Node.js is in PATH."
 fi
@@ -259,12 +259,12 @@ rule
 gap
 printf "  ${_bold}Setup wizard:${_reset}\n"
 gap
-printf "  ${_bold}  claude-oauth auth-setup${_reset}\n"
+printf "  ${_bold}  clw-auth auth-setup${_reset}\n"
 gap
 printf "  ${_dim}Or manually:${_reset}\n"
 gap
-printf "  ${_dim}    claude-oauth oauth-url               Generate OAuth URL${_reset}\n"
-printf "  ${_dim}    claude-oauth oauth-exchange <input>  Exchange code for tokens${_reset}\n"
-printf "  ${_dim}    claude-oauth status                  Check auth status${_reset}\n"
-printf "  ${_dim}    claude-oauth doctor                  Full diagnostic report${_reset}\n"
+printf "  ${_dim}    clw-auth oauth-url               Generate OAuth URL${_reset}\n"
+printf "  ${_dim}    clw-auth oauth-exchange <input>  Exchange code for tokens${_reset}\n"
+printf "  ${_dim}    clw-auth status                  Check auth status${_reset}\n"
+printf "  ${_dim}    clw-auth doctor                  Full diagnostic report${_reset}\n"
 gap
