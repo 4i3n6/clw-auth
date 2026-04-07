@@ -12,6 +12,8 @@ const CHANGELOG_PATH = resolve(ROOT, 'CHANGELOG.md');
 const BODY_REQUIRED_TYPES = new Set(['feat', 'fix']);
 const MIN_BODY_LENGTH = 20;
 
+export { parseCommit, detectBumpType, checkQuality, formatEntry, groupCommits, buildEntry };
+
 // ---------------------------------------------------------------------------
 // Git helpers
 // ---------------------------------------------------------------------------
@@ -267,7 +269,11 @@ async function main() {
   process.stdout.write(`\nReleased v${nextVersion} and pushed tag.\n`);
 }
 
-main().catch((error) => {
-  process.stderr.write(`\nError: ${error.message}\n`);
-  process.exit(1);
-});
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isMain) {
+  main().catch((error) => {
+    process.stderr.write(`\nError: ${error.message}\n`);
+    process.exit(1);
+  });
+}
