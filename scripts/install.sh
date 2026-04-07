@@ -271,7 +271,7 @@ fi
 
 printf "  ${_bold}Get started:${_reset}\n"
 gap
-printf "  ${_bold}  clw-auth auth-setup${_reset}   ${_dim}# interactive setup wizard${_reset}\n"
+printf "  ${_bold}  clw-auth tui${_reset}           ${_dim}# interactive setup wizard${_reset}\n"
 printf "  ${_bold}  clw-auth update${_reset}        ${_dim}# update to latest release${_reset}\n"
 gap
 printf "  ${_dim}Or manually:${_reset}\n"
