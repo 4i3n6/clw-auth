@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
+import { createRequire } from 'node:module';
+
 const BIN_NAME = 'clw-auth';
+const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').version;
 
 const loadAuthModule = () => import('./auth.mjs');
 const loadConfigModule = () => import('./config.mjs');
@@ -147,6 +150,14 @@ const COMMAND_GROUPS = [
 ];
 
 const COMMAND_HELP = new Map([
+  [
+    '--version',
+    {
+      usage: '--version',
+      description: 'Print the installed version.',
+      examples: ['clw-auth --version'],
+    },
+  ],
   [
     'tui',
     {
@@ -339,6 +350,12 @@ const COMMAND_ALIASES = new Map([
   ['refresh',    'oauth-refresh'],
   ['auth-setup', 'tui'],
 ]);
+
+const isVersionCommand = (command) => command === '--version' || command === '-v';
+
+const printVersion = () => {
+  console.log(`${BIN_NAME} ${PACKAGE_VERSION}`);
+};
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -669,6 +686,11 @@ const runCommand = async (command, args) => {
 
 const main = async () => {
   const [, , rawCommand, ...args] = process.argv;
+
+  if (isVersionCommand(rawCommand)) {
+    printVersion();
+    return;
+  }
 
   if (!rawCommand) {
     printGeneralHelp();
