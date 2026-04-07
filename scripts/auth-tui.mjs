@@ -3,7 +3,7 @@
 /**
  * auth-tui.mjs
  *
- * Interactive TUI wizard for claude-oauth authentication.
+ * Interactive TUI wizard for clw-auth authentication.
  * Zero runtime dependencies — readline + ANSI escape codes only.
  *
  * Flow:
@@ -28,7 +28,7 @@ const [nodeMajor] = process.versions.node.split('.').map(Number);
 
 if (nodeMajor < NODE_MIN_MAJOR) {
   process.stderr.write(
-    `\nError: claude-oauth requires Node.js >= ${NODE_MIN_MAJOR}.\n` +
+    `\nError: clw-auth requires Node.js >= ${NODE_MIN_MAJOR}.\n` +
     `  Current version: ${process.versions.node}\n` +
     `  Get a newer version at https://nodejs.org\n\n`,
   );
@@ -124,7 +124,7 @@ function gap(n = 1) {
 function banner() {
   try { console.clear(); } catch { /* some CI/dumb terminals don't support it */ }
 
-  const title  = '  claude-oauth  ';
+  const title  = '  clw-auth  ';
   const inner  = W + 2;
   const left   = Math.floor((inner - title.length) / 2);
   const right  = inner - title.length - left;
@@ -496,7 +496,7 @@ function classifyError(error) {
 
   if (lower.includes('enoent')) {
     return 'Path not found — a required directory may not exist.\n' +
-      '       Run claude-oauth once from the CLI first to initialise data paths.';
+      '       Run clw-auth once from the CLI first to initialise data paths.';
   }
 
   if (lower.includes('input stream') || lower.includes('readline')) {
@@ -571,7 +571,7 @@ async function safeImport(importFn, moduleName) {
   } catch (error) {
     throw new Error(
       `Could not load "${moduleName}": ${error instanceof Error ? error.message : String(error)}\n` +
-      '  Make sure you are running this from the claude-oauth project root.',
+      '  Make sure you are running this from the clw-auth project root.',
     );
   }
 }
@@ -928,7 +928,7 @@ async function stepExport(tool) {
 
   if (wantsOpenCode && !isOauth) {
     warn('OpenCode requires OAuth authentication.');
-    info('Re-run with OAuth to export to OpenCode: ' + c.bold('claude-oauth export opencode'));
+    info('Re-run with OAuth to export to OpenCode: ' + c.bold('clw-auth export opencode'));
     if (!wantsOpenClaw) return;
     gap();
   }
@@ -946,7 +946,7 @@ async function stepExport(tool) {
     ({ runExporter } = await safeImport(loadExporters, 'exporters/index.mjs'));
   } catch (error) {
     fail('Could not load exporters: ' + classifyError(error));
-    info('Export manually: ' + c.bold('claude-oauth export opencode') + ' / ' + c.bold('claude-oauth export openclaw'));
+    info('Export manually: ' + c.bold('clw-auth export opencode') + ' / ' + c.bold('clw-auth export openclaw'));
     return;
   }
 
@@ -960,7 +960,7 @@ async function stepExport(tool) {
     } catch (error) {
       process.stdout.write(ansi.show);
       fail('OpenCode: ' + classifyError(error));
-      info('Retry: ' + c.bold('claude-oauth export opencode'));
+      info('Retry: ' + c.bold('clw-auth export opencode'));
     }
   }
 
@@ -974,7 +974,7 @@ async function stepExport(tool) {
     } catch (error) {
       process.stdout.write(ansi.show);
       fail('OpenClaw: ' + classifyError(error));
-      info('Retry: ' + c.bold('claude-oauth export openclaw'));
+      info('Retry: ' + c.bold('clw-auth export openclaw'));
     }
   }
 }
@@ -1005,7 +1005,7 @@ async function showSummary() {
 
       if (expired) {
         fail(`Token:       expired (${expiresAt})`);
-        warn('Renew with: ' + c.bold('claude-oauth refresh'));
+        warn('Renew with: ' + c.bold('clw-auth refresh'));
       } else {
         ok(`Token:       valid until ${c.bold(expiresAt)}`);
       }
@@ -1015,9 +1015,9 @@ async function showSummary() {
   }
 
   gap();
-  info('Full diagnostic: ' + c.bold('claude-oauth doctor'));
-  info('Check status:    ' + c.bold('claude-oauth status'));
-  info('Manual export:   ' + c.bold('claude-oauth export opencode'));
+  info('Full diagnostic: ' + c.bold('clw-auth doctor'));
+  info('Check status:    ' + c.bold('clw-auth status'));
+  info('Manual export:   ' + c.bold('clw-auth export opencode'));
   gap();
 }
 
