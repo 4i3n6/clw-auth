@@ -195,6 +195,8 @@ gap
 
 info "Checking PATH..."
 
+_path_added=0
+
 case ":$PATH:" in
   *":$BIN_DIR:"*)
     ok "$BIN_DIR is in PATH."
@@ -203,35 +205,32 @@ case ":$PATH:" in
     warn "$BIN_DIR is not in your PATH."
     gap
 
-    # Detect the right rc file for the current shell.
     case "${SHELL:-}" in
       */zsh)  RC_FILE="$HOME/.zshrc"  ;;
       */bash) RC_FILE="$HOME/.bashrc" ;;
       *)      RC_FILE="$HOME/.profile" ;;
     esac
 
-    printf "  Add this line to %s${_bold}%s${_reset}:\n" "" "$RC_FILE"
-    gap
-    printf '    export PATH="$HOME/.local/bin:$PATH"\n'
-    gap
-    printf "  Then reload: ${_bold}source %s${_reset}\n" "$RC_FILE"
-    gap
-
-    # Offer to append automatically.
     if [ -t 0 ]; then
-      printf "  Append automatically? [y/N] "
+      printf "  Append ${_bold}export PATH=\"\$HOME/.local/bin:\$PATH\"${_reset} to ${_bold}%s${_reset}? [y/N] " "$RC_FILE"
       read -r _answer </dev/tty || _answer="n"
       case "$_answer" in
         y|Y)
           printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC_FILE"
-          ok "Added to $RC_FILE. Reload your shell to apply."
+          ok "Added to $RC_FILE."
+          _path_added=1
           ;;
         *)
-          info "Skipped — add it manually when ready."
+          info "Skipped. Add manually: export PATH=\"\$HOME/.local/bin:\$PATH\""
           ;;
       esac
-      gap
+    else
+      printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC_FILE"
+      ok "Added PATH entry to $RC_FILE."
+      _path_added=1
     fi
+
+    gap
     ;;
 esac
 
@@ -257,9 +256,22 @@ fi
 gap
 rule
 gap
-printf "  ${_bold}Setup wizard:${_reset}\n"
+
+if [ "$_path_added" = "1" ]; then
+  printf "  ${_bold}${_yellow}Reload your shell first:${_reset}\n"
+  gap
+  printf "  ${_bold}  source %s${_reset}\n" "$RC_FILE"
+  gap
+  printf "  ${_dim}Or open a new terminal window.${_reset}\n"
+  gap
+  rule
+  gap
+fi
+
+printf "  ${_bold}Get started:${_reset}\n"
 gap
-printf "  ${_bold}  clw-auth auth-setup${_reset}\n"
+printf "  ${_bold}  clw-auth auth-setup${_reset}   ${_dim}# interactive setup wizard${_reset}\n"
+printf "  ${_bold}  clw-auth update${_reset}        ${_dim}# update to latest release${_reset}\n"
 gap
 printf "  ${_dim}Or manually:${_reset}\n"
 gap
