@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-07
+
+### Breaking Changes
+
+- **pre-1.0 breaking changes bump minor not major** — When major version is 0, a breaking change bumps minor (0.2→0.3) following SemVer and release-please pre-1.0 convention. Adds --force flag to skip quality check for commits predating the rule.
+- **enforce commit body for changelog quality** — feat and fix commits now require a body of at least 20 chars. Breaking changes (! or BREAKING CHANGE) always require a body. Release is blocked with an actionable error listing which commits fail and how to fix them (amend or rebase). Changelog entries now formatted as: - **subject** — body paragraph instead of bare bullet points.
+- **update all data dir and plugin path references to clw-auth** — BREAKING CHANGE: data stored at ~/.local/share/clw-auth/. OpenCode plugin now at ~/.config/opencode/plugins/clw-auth-anthropic.mjs.
+- **update crontab detection and log path to clw-auth**
+- **rename data dir and plugin to clw-auth** — BREAKING CHANGE: plugin now written to clw-auth-anthropic.mjs. Previous claude-oauth-anthropic.mjs added to legacy cleanup list so it is removed automatically on next export run. DATA_DIR inside generated plugin updated to clw-auth.
+- **rename data directory from claude-oauth to clw-auth** — BREAKING CHANGE: credentials and config now stored at ~/.local/share/clw-auth/. Existing data at ~/.local/share/claude-oauth/ must be moved manually.
+- **rename binary from claude-oauth to clw-auth** — BREAKING CHANGE: the installed binary is now 'clw-auth' instead of 'claude-oauth'. Existing installations need to re-run the installer or rename the symlink manually.
+
+### Added
+
+- **add local release automation script** — npm run release: reads git log since last tag, detects bump type from conventional commits (feat=minor, fix=patch, !=major), updates package.json and CHANGELOG.md, commits chore(release): vX.Y.Z, creates annotated tag, pushes commit and tag. Zero dependencies, interactive confirmation step.
+- **add cron-install, cron-status, cron-logs commands** — cron-install: installs cron entry (idempotent, delegates to installCron). cron-status:  shows installed entry, last run from debug.log, lock state, log info. cron-logs [n]: tails last n lines of cron.log (default 50).
+- **add installCron, printCronStatus, printCronLogs** — installCron: writes cron entry (0 */6 * * *) idempotently to crontab. printCronStatus: shows installed entry, last run from debug.log, lock state, log path and size. printCronLogs: tails last N lines of cron.log (default 50).
+- **add getCronLogPath helper**
+- **add one-liner install script for macOS and Linux** — Idempotent shell installer: checks Node >= 18 and git, clones to ~/.local/share/clw-auth, symlinks to ~/.local/bin/claude-oauth. On re-run, fetches latest release tag and updates in-place. Detects shell and offers to patch PATH automatically if not set. Respects NO_COLOR and non-TTY environments.
+
+### Fixed
+
+- **register auth-setup command — clw-auth auth-setup was broken** — auth-setup existed only as an npm script, not as a CLI command. Running 'clw-auth auth-setup' would silently fall through to help. Registers the command and spawns auth-tui.mjs as a subprocess so the TUI gets full terminal control (raw mode, signals, readline).
+
+### Changed
+
+- **add test suite and integrate as pre-release gate** — 70 tests across 4 modules: - store.test.mjs: normalizeAuth (14 cases — oauth, api key, invalid input) - auth.test.mjs: shouldRefreshOauth (7 cases), splitCodeAndState (7 cases) - openclaw.test.mjs: validateConfiguredAuth, buildOauthProfile, buildApiProfile (14 cases) - release.test.mjs: parseCommit, detectBumpType, checkQuality, formatEntry, groupCommits (28 cases) npm run release now runs tests first and blocks on any failure.
+- **export pure functions and add isMain guard** — Allows release.mjs to be imported as a module in tests without triggering the interactive main() flow.
+- **export pure functions and simplify buildApiProfile** — Exports validateConfiguredAuth, buildOauthProfile, buildApiProfile for unit testing. Removes redundant raw file read from buildApiProfile — since normalizeAuth now preserves the key field, auth.key is always available.
+- **export splitCodeAndState for unit testing**
+- **export normalizeAuth and support CLW_DATA_DIR env var** — Allows unit tests to import normalizeAuth directly and to isolate filesystem operations by pointing CLW_DATA_DIR to a temp directory.
+- **rename project to clw-auth in README and LICENSE** — Updates title, all command examples, structure diagram, and portability section. Preserves ~/.local/share/claude-oauth/ data path references for backward compatibility.
+- **update project name in descriptions and user-facing output** — Updates command references and error messages to clw-auth. Preserves data dir paths (~/.local/share/claude-oauth/) and plugin filename (claude-oauth-anthropic.mjs) for backward compatibility.
+- **update command references to clw-auth**
+- **update BIN_NAME and all --help examples to clw-auth**
+- **remove Windows from platform badge, scoped to macOS+Linux**
+- **add badges and install section**
+
+
 ## [0.2.0] - 2026-04-06
 
 ### Added
@@ -52,6 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/clw-auth/clw-auth/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/4i3n6/clw-auth/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/clw-auth/clw-auth/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/clw-auth/clw-auth/releases/tag/v0.1.0
