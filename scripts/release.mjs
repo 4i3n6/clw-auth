@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 
-import { execSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const PKG_PATH = resolve(ROOT, 'package.json');
+const ROOT          = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const PKG_PATH      = resolve(ROOT, 'package.json');
 const CHANGELOG_PATH = resolve(ROOT, 'CHANGELOG.md');
+
+const BODY_REQUIRED_TYPES = new Set(['feat', 'fix']);
+const MIN_BODY_LENGTH = 20;
 
 // ---------------------------------------------------------------------------
 // Git helpers
@@ -15,35 +18,87 @@ const CHANGELOG_PATH = resolve(ROOT, 'CHANGELOG.md');
 
 function git(args, opts = {}) {
   const result = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', ...opts });
-  if (result.status !== 0) {
-    throw new Error(`git ${args.join(' ')} failed:\n${result.stderr}`);
-  }
+  if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed:\n${result.stderr}`);
   return result.stdout.trim();
 }
 
-function run(cmd) {
-  return execSync(cmd, { cwd: ROOT, encoding: 'utf8' }).trim();
+// ---------------------------------------------------------------------------
+// Commit parsing — reads subject and body separately per commit
+// ---------------------------------------------------------------------------
+
+const COMMIT_SEP = '---CLW-COMMIT-END---';
+
+function readCommits(logRange) {
+  const raw = git(['log', logRange, `--format=%H%n%s%n%b%n${COMMIT_SEP}`, '--no-merges']);
+
+  return raw
+    .split(COMMIT_SEP)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => {
+      const lines = block.split('\n');
+      const hash    = lines[0].trim();
+      const subject = lines[1]?.trim() ?? '';
+      const body    = lines.slice(2).join('\n').trim();
+      return { hash, subject, body };
+    })
+    .filter((c) => c.hash && c.subject);
 }
 
-// ---------------------------------------------------------------------------
-// Guard: clean working tree required
-// ---------------------------------------------------------------------------
-
-function assertCleanTree() {
-  const status = git(['status', '--porcelain']);
-  if (status) {
-    throw new Error('Working tree is not clean. Commit or stash changes before releasing.');
+function parseCommit({ hash, subject, body }) {
+  const match = subject.match(/^([a-z]+)(\(([^)]+)\))?(!)?: (.+)$/);
+  if (!match) {
+    return { hash, type: null, scope: null, breaking: false, description: subject, body };
   }
+
+  const [, type, , scope, bang, description] = match;
+  const breaking = bang === '!' || /BREAKING[- ]CHANGE/i.test(body);
+
+  return { hash, type, scope: scope ?? null, breaking, description, body };
 }
 
 // ---------------------------------------------------------------------------
-// Version parsing
+// Quality enforcement
+// ---------------------------------------------------------------------------
+
+function checkQuality(commits) {
+  return commits.filter((c) => {
+    if (!c.type) return false;
+    if (c.breaking) return !c.body || c.body.length < MIN_BODY_LENGTH;
+    return BODY_REQUIRED_TYPES.has(c.type) && (!c.body || c.body.length < MIN_BODY_LENGTH);
+  });
+}
+
+function failQuality(failing) {
+  const lines = [
+    '',
+    'Quality check failed — these commits need a body before releasing:\n',
+  ];
+
+  for (const c of failing) {
+    const reason = c.breaking
+      ? 'breaking changes require a body description'
+      : `${c.type} commits require a body description`;
+    lines.push(`  ${c.hash.slice(0, 7)}  ${c.type}${c.scope ? `(${c.scope})` : ''}${c.breaking ? '!' : ''}: ${c.description}`);
+    lines.push(`           ↑ ${reason} (>= ${MIN_BODY_LENGTH} chars)\n`);
+  }
+
+  lines.push('How to fix:');
+  lines.push('  git commit --amend          amend the last commit');
+  lines.push('  git rebase -i <hash>^       edit an older commit body');
+  lines.push('');
+
+  throw new Error(lines.join('\n'));
+}
+
+// ---------------------------------------------------------------------------
+// Version helpers
 // ---------------------------------------------------------------------------
 
 function parseVersion(tag) {
-  const match = tag.replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)$/);
-  if (!match) throw new Error(`Cannot parse version from tag: ${tag}`);
-  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+  const m = tag.replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (!m) throw new Error(`Cannot parse version: ${tag}`);
+  return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) };
 }
 
 function formatVersion({ major, minor, patch }) {
@@ -56,21 +111,13 @@ function bump(version, type) {
   return { major: version.major, minor: version.minor, patch: version.patch + 1 };
 }
 
-// ---------------------------------------------------------------------------
-// Commit analysis — conventional commits
-// ---------------------------------------------------------------------------
-
 function detectBumpType(commits) {
   let hasBreaking = false;
   let hasFeat = false;
 
-  for (const commit of commits) {
-    if (/BREAKING.CHANGE/i.test(commit) || /^[a-z]+(\([^)]+\))?!:/.test(commit)) {
-      hasBreaking = true;
-    }
-    if (/^feat(\([^)]+\))?[!:]/.test(commit)) {
-      hasFeat = true;
-    }
+  for (const c of commits) {
+    if (c.breaking) hasBreaking = true;
+    if (c.type === 'feat') hasFeat = true;
   }
 
   if (hasBreaking) return 'major';
@@ -78,67 +125,71 @@ function detectBumpType(commits) {
   return 'patch';
 }
 
+// ---------------------------------------------------------------------------
+// Changelog formatting
+// ---------------------------------------------------------------------------
+
+function formatEntry(commit) {
+  const title = `**${commit.description}**`;
+
+  if (!commit.body) return `- ${title}`;
+
+  const bodyText = commit.body
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join(' ');
+
+  return `- ${title} — ${bodyText}`;
+}
+
 function groupCommits(commits) {
-  const groups = { breaking: [], feat: [], fix: [], chore: [], other: [] };
+  const groups = { breaking: [], feat: [], fix: [], chore: [] };
 
-  for (const line of commits) {
-    const match = line.match(/^([a-z]+)(\([^)]+\))?(!)?: (.+)$/);
-    if (!match) { groups.other.push(line); continue; }
-
-    const [, type,, bang, subject] = match;
-    const isBreaking = bang === '!';
-    const entry = isBreaking ? `${subject} (**BREAKING**)` : subject;
-
-    if (isBreaking) { groups.breaking.push(entry); continue; }
-    if (type === 'feat') { groups.feat.push(entry); continue; }
-    if (type === 'fix') { groups.fix.push(entry); continue; }
-    if (['chore', 'docs', 'refactor', 'style', 'test', 'ci', 'build'].includes(type)) {
-      groups.chore.push(entry); continue;
-    }
-    groups.other.push(entry);
+  for (const c of commits) {
+    const entry = formatEntry(c);
+    if (c.breaking)                                             { groups.breaking.push(entry); continue; }
+    if (c.type === 'feat')                                      { groups.feat.push(entry); continue; }
+    if (c.type === 'fix')                                       { groups.fix.push(entry); continue; }
+    if (c.type && c.type !== 'feat' && c.type !== 'fix')       { groups.chore.push(entry); continue; }
   }
 
   return groups;
 }
 
-// ---------------------------------------------------------------------------
-// CHANGELOG update
-// ---------------------------------------------------------------------------
+function buildEntry(version, groups) {
+  const date  = new Date().toISOString().slice(0, 10);
+  const lines = [`## [${version}] - ${date}`, ''];
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
+  const sections = [
+    ['### Breaking Changes', groups.breaking],
+    ['### Added',            groups.feat],
+    ['### Fixed',            groups.fix],
+    ['### Changed',          groups.chore],
+  ];
 
-function buildEntry(version, groups, repoUrl) {
-  const lines = [`## [${version}] - ${today()}`, ''];
-
-  if (groups.breaking.length > 0) {
-    lines.push('### Breaking Changes', '');
-    for (const item of groups.breaking) lines.push(`- ${item}`);
-    lines.push('');
-  }
-  if (groups.feat.length > 0) {
-    lines.push('### Added', '');
-    for (const item of groups.feat) lines.push(`- ${item}`);
-    lines.push('');
-  }
-  if (groups.fix.length > 0) {
-    lines.push('### Fixed', '');
-    for (const item of groups.fix) lines.push(`- ${item}`);
-    lines.push('');
-  }
-  if (groups.chore.length > 0) {
-    lines.push('### Changed', '');
-    for (const item of groups.chore) lines.push(`- ${item}`);
+  for (const [heading, items] of sections) {
+    if (items.length === 0) continue;
+    lines.push(heading, '');
+    for (const item of items) lines.push(item);
     lines.push('');
   }
 
   return lines.join('\n');
 }
 
-function updateChangelog(newVersion, prevVersion, entry, repoUrl) {
-  const raw = readFileSync(CHANGELOG_PATH, 'utf8');
+// ---------------------------------------------------------------------------
+// File updates
+// ---------------------------------------------------------------------------
 
+function updatePackageVersion(newVersion) {
+  const pkg = JSON.parse(readFileSync(PKG_PATH, 'utf8'));
+  pkg.version = newVersion;
+  writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 2)}\n`);
+}
+
+function updateChangelog(newVersion, prevVersion, entry, repoUrl) {
+  const raw      = readFileSync(CHANGELOG_PATH, 'utf8');
   const prevTag  = `v${prevVersion}`;
   const nextTag  = `v${newVersion}`;
   const linkLine = `[${newVersion}]: ${repoUrl}/compare/${prevTag}...${nextTag}`;
@@ -154,66 +205,55 @@ function updateChangelog(newVersion, prevVersion, entry, repoUrl) {
 }
 
 // ---------------------------------------------------------------------------
-// package.json update
-// ---------------------------------------------------------------------------
-
-function updatePackageVersion(newVersion) {
-  const raw = readFileSync(PKG_PATH, 'utf8');
-  const pkg = JSON.parse(raw);
-  pkg.version = newVersion;
-  writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 2)}\n`);
-  return pkg;
-}
-
-// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main() {
-  assertCleanTree();
+  const status = git(['status', '--porcelain']);
+  if (status) throw new Error('Working tree is not clean. Commit or stash changes first.');
 
-  const pkg      = JSON.parse(readFileSync(PKG_PATH, 'utf8'));
-  const repoUrl  = git(['remote', 'get-url', 'origin'])
+  const pkg     = JSON.parse(readFileSync(PKG_PATH, 'utf8'));
+  const repoUrl = git(['remote', 'get-url', 'origin'])
     .replace(/\.git$/, '')
     .replace(/^https?:\/\/[^@]+@/, 'https://');
 
-  const lastTag  = (() => {
-    try { return git(['describe', '--tags', '--abbrev=0']); }
-    catch { return null; }
+  const lastTag = (() => {
+    try { return git(['describe', '--tags', '--abbrev=0']); } catch { return null; }
   })();
 
   const logRange = lastTag ? `${lastTag}..HEAD` : 'HEAD';
-  const rawLog   = git(['log', logRange, '--format=%s %b', '--no-merges']);
-  const commits  = rawLog.split('\n').map((l) => l.trim()).filter(Boolean);
+  const raw      = readCommits(logRange);
 
-  if (commits.length === 0) {
+  if (raw.length === 0) {
     process.stdout.write('No commits since last release. Nothing to release.\n');
     return;
   }
+
+  const commits  = raw.map(parseCommit);
+  const failing  = checkQuality(commits);
+
+  if (failing.length > 0) failQuality(failing);
 
   const currentVersion = parseVersion(lastTag ?? `v${pkg.version}`);
   const bumpType       = detectBumpType(commits);
   const nextVersion    = formatVersion(bump(currentVersion, bumpType));
   const groups         = groupCommits(commits);
-  const entry          = buildEntry(nextVersion, groups, repoUrl);
+  const entry          = buildEntry(nextVersion, groups);
 
-  process.stdout.write(`\nLast release: ${lastTag ?? '(none)'}\n`);
-  process.stdout.write(`Commits:      ${commits.length}\n`);
-  process.stdout.write(`Bump type:    ${bumpType}\n`);
-  process.stdout.write(`Next version: v${nextVersion}\n\n`);
-  process.stdout.write('--- CHANGELOG entry preview ---\n\n');
+  process.stdout.write(`\nLast release:  ${lastTag ?? '(none)'}\n`);
+  process.stdout.write(`Commits:       ${commits.length}\n`);
+  process.stdout.write(`Bump type:     ${bumpType}\n`);
+  process.stdout.write(`Next version:  v${nextVersion}\n`);
+  process.stdout.write('\n--- CHANGELOG preview ---\n\n');
   process.stdout.write(entry);
   process.stdout.write('\n---\n\nProceed? [y/N] ');
 
-  const answer = await new Promise((resolve) => {
+  const answer = await new Promise((res) => {
     process.stdin.setEncoding('utf8');
-    process.stdin.once('data', (d) => resolve(d.trim().toLowerCase()));
+    process.stdin.once('data', (d) => res(d.trim().toLowerCase()));
   });
 
-  if (answer !== 'y') {
-    process.stdout.write('Aborted.\n');
-    process.exit(0);
-  }
+  if (answer !== 'y') { process.stdout.write('Aborted.\n'); process.exit(0); }
 
   updatePackageVersion(nextVersion);
   updateChangelog(nextVersion, formatVersion(currentVersion), entry, repoUrl);
@@ -224,8 +264,7 @@ async function main() {
   git(['push', 'origin', 'HEAD']);
   git(['push', 'origin', `v${nextVersion}`]);
 
-  process.stdout.write(`\nReleased v${nextVersion}.\n`);
-  process.stdout.write(`Tag pushed: v${nextVersion}\n`);
+  process.stdout.write(`\nReleased v${nextVersion} and pushed tag.\n`);
 }
 
 main().catch((error) => {
