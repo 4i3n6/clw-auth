@@ -4,9 +4,7 @@ import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
 import {
-  getAuthPath,
   loadAuth,
-  loadJson,
   writeJsonAtomic,
 } from '../store.mjs';
 
@@ -62,7 +60,7 @@ function getAuthProfilesPath(agentId) {
   return join(homedir(), '.openclaw', 'agents', agentId, 'agent', 'auth-profiles.json');
 }
 
-function validateConfiguredAuth(auth) {
+export function validateConfiguredAuth(auth) {
   if (!isPlainObject(auth)) {
     throw new Error('clw-auth auth.json is not configured.');
   }
@@ -74,7 +72,7 @@ function validateConfiguredAuth(auth) {
   return auth;
 }
 
-function buildOauthProfile(auth) {
+export function buildOauthProfile(auth) {
   const expires = Number(auth.expires);
 
   if (typeof auth.access !== 'string' || !auth.access) {
@@ -98,18 +96,15 @@ function buildOauthProfile(auth) {
   };
 }
 
-function buildApiProfile(auth) {
-  const rawAuth = loadJson(getAuthPath());
-  const key = isPlainObject(rawAuth) && typeof rawAuth.key === 'string' && rawAuth.key ? rawAuth.key : auth.access;
-
-  if (typeof key !== 'string' || !key) {
-    throw new Error('clw-auth auth.json is missing the Anthropic API key.');
+export function buildApiProfile(auth) {
+  if (typeof auth.key !== 'string' || !auth.key) {
+    throw new Error('clw-auth auth.json is missing the Anthropic API key. Run: clw-auth api <key>');
   }
 
   return {
     type: 'api_key',
     provider: 'anthropic',
-    key,
+    key: auth.key,
   };
 }
 
