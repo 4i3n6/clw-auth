@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-07
+
+### Added
+
+- **write Anthropic models to agent models.json on export** — OpenClaw requires an anthropic provider entry in the agent's models.json for Claude models to appear in 'openclaw models list'. Without it, the auth-profiles.json is ignored because there are no models to show. Adds claude-opus-4-6, claude-sonnet-4-6, and claude-haiku-4-5 to models.json with api: 'anthropic-messages' (the OpenClaw API type confirmed from the installed pi-ai source). Costs set to 0 for Claude Pro/Max OAuth plans. Preserves existing provider entries.
+
+
 ## [0.6.0] - 2026-04-07
 
 ### Added
@@ -179,7 +186,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/4i3n6/clw-auth/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/4i3n6/clw-auth/compare/v0.5.6...v0.6.0
 [0.5.6]: https://github.com/4i3n6/clw-auth/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/4i3n6/clw-auth/compare/v0.5.4...v0.5.5
