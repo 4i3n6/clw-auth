@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-07
+
+### Fixed
+
+- **correct redirect_uri and token endpoint to console.anthropic.com** — platform.claude.com redirects to console.anthropic.com during OAuth. The auth server records the final URI (console.anthropic.com) but the token request was sending platform.claude.com — causing redirect_uri mismatch and 400 Invalid request format on every exchange attempt. Confirmed by 8/8 open-source implementations using the same client_id: all use console.anthropic.com/oauth/code/callback as redirect_uri and console.anthropic.com/v1/oauth/token as primary token endpoint. Also adds user-agent header to token requests as required by Anthropic infrastructure to route OAuth traffic correctly.
+
+
 ## [0.5.1] - 2026-04-07
 
 ### Fixed
@@ -137,7 +144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/4i3n6/clw-auth/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/4i3n6/clw-auth/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/4i3n6/clw-auth/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/4i3n6/clw-auth/compare/v0.4.0...v0.4.1
