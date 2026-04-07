@@ -11,6 +11,40 @@ import {
 const AUTH_PROFILES_SCHEMA_VERSION = 1;
 const OPENCLAW_AGENTS_DIR = join(homedir(), '.openclaw', 'agents');
 
+const ANTHROPIC_MODELS_PROVIDER = Object.freeze({
+  baseUrl: 'https://api.anthropic.com',
+  api: 'anthropic-messages',
+  models: [
+    {
+      id: 'claude-opus-4-6',
+      name: 'Claude Opus 4.6',
+      reasoning: true,
+      input: ['text', 'image'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_000_000,
+      maxTokens: 128_000,
+    },
+    {
+      id: 'claude-sonnet-4-6',
+      name: 'Claude Sonnet 4.6',
+      reasoning: true,
+      input: ['text', 'image'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_000_000,
+      maxTokens: 64_000,
+    },
+    {
+      id: 'claude-haiku-4-5',
+      name: 'Claude Haiku 4.5',
+      reasoning: true,
+      input: ['text', 'image'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 200_000,
+      maxTokens: 64_000,
+    },
+  ],
+});
+
 export const DESCRIPTION = 'Sync clw-auth credentials into OpenClaw auth profiles.';
 
 const OPENCLAW_PROFILE_NAME = 'anthropic:default';
@@ -32,6 +66,10 @@ function loadJsonSafe(filePath) {
 
 function getAuthProfilesPath(agentId) {
   return join(OPENCLAW_AGENTS_DIR, agentId, 'agent', 'auth-profiles.json');
+}
+
+function getModelsPath(agentId) {
+  return join(OPENCLAW_AGENTS_DIR, agentId, 'agent', 'models.json');
 }
 
 function listAgents() {
@@ -152,6 +190,7 @@ function buildProfile(auth) {
 }
 
 function exportToAgent(agentId, profile) {
+  // 1. Write auth profile
   const authProfilesPath = getAuthProfilesPath(agentId);
   const currentStore = loadJsonSafe(authProfilesPath);
 
@@ -171,6 +210,21 @@ function exportToAgent(agentId, profile) {
   };
 
   writeJsonAtomic(authProfilesPath, nextStore, 0o600);
+
+  // 2. Update models.json — add/replace anthropic provider so models appear in `openclaw models list`
+  const modelsPath = getModelsPath(agentId);
+  const currentModels = loadJsonSafe(modelsPath);
+  const currentProviders = isPlainObject(currentModels.providers) ? currentModels.providers : {};
+
+  const nextModels = {
+    ...currentModels,
+    providers: {
+      ...currentProviders,
+      anthropic: ANTHROPIC_MODELS_PROVIDER,
+    },
+  };
+
+  writeJsonAtomic(modelsPath, nextModels, 0o644);
 
   return authProfilesPath;
 }
