@@ -17,7 +17,8 @@
     "config": "node src/cli.mjs config",
     "cron-run": "node src/cli.mjs cron-run",
     "setup-cron": "node scripts/setup-cron.mjs",
-    "auth-setup": "node scripts/auth-tui.mjs"
+    "auth-setup": "node scripts/auth-tui.mjs",
+    "release": "node scripts/release.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
