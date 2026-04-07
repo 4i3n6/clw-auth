@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-07
+
+### Added
+
+- **interactive agent selection on export** — clw-auth export openclaw now lists all agents configured in ~/.openclaw/agents/, shows which already have Anthropic credentials, and prompts the user to select one or all before exporting. If only one agent exists, it is used automatically. If options.agentId is passed programmatically, the prompt is skipped.
+
+
 ## [0.5.6] - 2026-04-07
 
 ### Fixed
@@ -172,7 +179,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.6...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/4i3n6/clw-auth/compare/v0.5.6...v0.6.0
 [0.5.6]: https://github.com/4i3n6/clw-auth/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/4i3n6/clw-auth/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/4i3n6/clw-auth/compare/v0.5.3...v0.5.4

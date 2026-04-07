@@ -1,6 +1,6 @@
 {
   "name": "clw-auth",
-  "version": "0.5.6",
+  "version": "0.6.0",
   "description": "Standalone Anthropic OAuth credential manager",
   "type": "module",
   "private": false,
