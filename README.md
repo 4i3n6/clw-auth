@@ -24,7 +24,7 @@ The installer will:
 Then run the interactive setup wizard:
 
 ```bash
-clw-auth auth-setup
+clw-auth tui
 ```
 
 > **Shell reload**: if the installer added `~/.local/bin` to your PATH, run `source ~/.zshrc` (or `~/.bashrc`) before using `clw-auth`, or open a new terminal.
@@ -151,7 +151,7 @@ clw-auth status
 ### Setup
 
 ```bash
-clw-auth auth-setup                   # Interactive setup wizard (first-time)
+clw-auth tui                          # Interactive setup wizard (auth + export)
 clw-auth update                       # Update to latest release from GitHub
 ```
 
