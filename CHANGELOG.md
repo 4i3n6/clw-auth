@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-04-07
+
+### Fixed
+
+- **correct OAuth token exchange using working reference implementation** — Analysis of ~/bin/opencode-anthropic-auth (confirmed working) revealed three critical differences from our implementation: 1. REDIRECT_URI reverted to platform.claude.com (console.anthropic.com was wrong — platform.claude.com is the correct registered callback) 2. code=true parameter added to the auth URL (required by claude.ai) 3. state field added to the token payload alongside code_verifier (Anthropic requires both fields in the exchange request) 4. Content-Type reverted to application/json (working impl uses JSON) 5. TOKEN_ENDPOINTS order restored to platform.claude.com first The missing state field in the token payload was the root cause of the 400 Invalid request format error.
+
+
 ## [0.5.2] - 2026-04-07
 
 ### Fixed
@@ -144,7 +151,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/4i3n6/clw-auth/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/4i3n6/clw-auth/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/4i3n6/clw-auth/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/4i3n6/clw-auth/compare/v0.4.1...v0.5.0
