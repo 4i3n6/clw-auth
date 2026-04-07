@@ -210,9 +210,35 @@ function updateChangelog(newVersion, prevVersion, entry, repoUrl) {
 // Main
 // ---------------------------------------------------------------------------
 
+function runTests() {
+  const { resolve: res } = { resolve: (p) => new URL(p, import.meta.url).pathname };
+  const testFiles = [
+    res('../test/store.test.mjs'),
+    res('../test/auth.test.mjs'),
+    res('../test/openclaw.test.mjs'),
+    res('../test/release.test.mjs'),
+  ];
+
+  process.stdout.write('Running tests...\n');
+
+  const result = spawnSync(process.execPath, ['--test', ...testFiles], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, CLW_DATA_DIR: '/tmp/clw-auth-test' },
+  });
+
+  if (result.status !== 0) {
+    throw new Error('Tests failed. Fix failing tests before releasing.');
+  }
+
+  process.stdout.write('All tests passed.\n\n');
+}
+
 async function main() {
   const status = git(['status', '--porcelain']);
   if (status) throw new Error('Working tree is not clean. Commit or stash changes first.');
+
+  runTests();
 
   const pkg     = JSON.parse(readFileSync(PKG_PATH, 'utf8'));
   const repoUrl = git(['remote', 'get-url', 'origin'])
