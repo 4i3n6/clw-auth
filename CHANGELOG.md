@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-07
+
+### Added
+
+- **add --version flag**
+
+### Fixed
+
+- **use clw-auth tui in next-steps output**
+- **show full OAuth URL without truncation and return browser status** — The URL was truncated to fit the box width, making it unusable when clipboard copy failed (common on headless Linux). Full URL is now printed outside the box at terminal width so the user can always select and copy it manually. Added xclip install hint for Linux. openBrowser now returns bool so the TUI can report accurate status.
+
+
 ## [0.4.1] - 2026-04-07
 
 ### Fixed
@@ -118,7 +130,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/4i3n6/clw-auth/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/4i3n6/clw-auth/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/4i3n6/clw-auth/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/4i3n6/clw-auth/compare/v0.2.0...v0.3.0
