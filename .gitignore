@@ -6,8 +6,13 @@ node_modules/
 dist/
 .DS_Store
 
-# Nunca versionar credenciais ou estado de runtime
+# AI agent context files — local only, never commit
+AGENTS.md
+**/AGENTS.md
+
+# Never version credentials or runtime state
 auth.json
+auth.json.bak
 auth.json.bak.*
 anthropic-plugin.json
 *.lock
