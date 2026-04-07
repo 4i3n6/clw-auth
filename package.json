@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Standalone Anthropic OAuth credential manager",
   "type": "module",
-  "private": true,
+  "private": false,
   "bin": {
     "claude-oauth": "src/cli.mjs"
   },
@@ -16,7 +16,8 @@
     "api-ref": "node src/cli.mjs api-ref",
     "config": "node src/cli.mjs config",
     "cron-run": "node src/cli.mjs cron-run",
-    "setup-cron": "node scripts/setup-cron.mjs"
+    "setup-cron": "node scripts/setup-cron.mjs",
+    "auth-setup": "node scripts/auth-tui.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -27,5 +28,5 @@
     "cli"
   ],
   "author": "",
-  "license": "UNLICENSED"
+  "license": "MIT"
 }
