@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-04-07
+
+### Fixed
+
+- **add missing methods array to generated plugin** — The generated clw-auth-anthropic.mjs plugin was missing the auth.methods array required by OpenCode's plugin API. When OpenCode called item.methods.map(), it crashed with 'undefined is not an object', fell back to the native Anthropic provider, used the OAuth token as an API key, and got 401 'OAuth authentication is currently not supported.' Fix adds: - import randomBytes, createHash from node:crypto (inline PKCE) - base64Url, generatePKCE, authorizeOAuth, exchangeCode helpers - auth.methods array with Claude Pro/Max OAuth and manual API key methods After clw-auth update + clw-auth export opencode, the new plugin will load correctly and intercept API calls with proper OAuth bearer token.
+
+
 ## [0.5.5] - 2026-04-07
 
 ### Fixed
@@ -165,7 +172,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.5.6...HEAD
+[0.5.6]: https://github.com/4i3n6/clw-auth/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/4i3n6/clw-auth/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/4i3n6/clw-auth/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/4i3n6/clw-auth/compare/v0.5.2...v0.5.3
