@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-07
+
+### Added
+
+- **register clw-auth update command**
+- **add git-based self-update module** — Detects install dir via import.meta.url, checks for a .git repo, fetches remote tags, compares current vs latest, and checkouts the new tag after confirmation. Handles missing git repo, network errors, and already-up-to-date gracefully. No shell reload needed after update since the symlink stays the same — files update in place.
+
+### Fixed
+
+- **use application/x-www-form-urlencoded for OAuth token exchange** — RFC 6749 requires form-encoded bodies for token endpoints, not JSON. Anthropic's token endpoint rejects JSON with 400 Invalid request format. Fixes oauth-exchange and oauth-refresh for all users.
+- **clear shell reload prompt and post-install instructions** — If PATH was modified during install, prints a highlighted reload block with the exact source command before showing next steps. In non-interactive mode (curl | sh piped), appends automatically and still shows the reload. Adds clw-auth update to the next-steps block.
+
+### Changed
+
+- **update README to use clw-auth tui as primary command**
+- **rename auth-setup to tui as primary command** — clw-auth tui is clearer and shorter. auth-setup kept as alias for backward compatibility via COMMAND_ALIASES.
+- **add clw-auth update command and install shell reload notes** — Documents what the installer does step-by-step, explains the shell reload requirement when PATH is modified, adds Update section with clw-auth update usage, and registers update in the Commands table.
+
+
 ## [0.3.0] - 2026-04-07
 
 ### Breaking Changes
@@ -91,7 +110,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/4i3n6/clw-auth/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/4i3n6/clw-auth/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/clw-auth/clw-auth/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/clw-auth/clw-auth/releases/tag/v0.1.0
