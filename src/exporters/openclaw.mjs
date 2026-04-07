@@ -9,41 +9,17 @@ import {
 } from '../store.mjs';
 
 const AUTH_PROFILES_SCHEMA_VERSION = 1;
-const OPENCLAW_AGENTS_DIR = join(homedir(), '.openclaw', 'agents');
+const OPENCLAW_DIR         = join(homedir(), '.openclaw');
+const OPENCLAW_AGENTS_DIR  = join(OPENCLAW_DIR, 'agents');
+const OPENCLAW_CONFIG_PATH = join(OPENCLAW_DIR, 'openclaw.json');
 
-const ANTHROPIC_MODELS_PROVIDER = Object.freeze({
-  baseUrl: 'https://api.anthropic.com',
-  api: 'anthropic-messages',
-  models: [
-    {
-      id: 'claude-opus-4-6',
-      name: 'Claude Opus 4.6',
-      reasoning: true,
-      input: ['text', 'image'],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 1_000_000,
-      maxTokens: 128_000,
-    },
-    {
-      id: 'claude-sonnet-4-6',
-      name: 'Claude Sonnet 4.6',
-      reasoning: true,
-      input: ['text', 'image'],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 1_000_000,
-      maxTokens: 64_000,
-    },
-    {
-      id: 'claude-haiku-4-5',
-      name: 'Claude Haiku 4.5',
-      reasoning: true,
-      input: ['text', 'image'],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 200_000,
-      maxTokens: 64_000,
-    },
-  ],
-});
+// Models added to ~/.openclaw/openclaw.json → agents.defaults.model.fallbacks.
+// This is what makes 'openclaw models list' recognise and display Claude models.
+const CLAUDE_FALLBACK_MODELS = Object.freeze([
+  'anthropic/claude-opus-4-6',
+  'anthropic/claude-sonnet-4-6',
+  'anthropic/claude-haiku-4-5',
+]);
 
 export const DESCRIPTION = 'Sync clw-auth credentials into OpenClaw auth profiles.';
 
@@ -66,10 +42,6 @@ function loadJsonSafe(filePath) {
 
 function getAuthProfilesPath(agentId) {
   return join(OPENCLAW_AGENTS_DIR, agentId, 'agent', 'auth-profiles.json');
-}
-
-function getModelsPath(agentId) {
-  return join(OPENCLAW_AGENTS_DIR, agentId, 'agent', 'models.json');
 }
 
 function listAgents() {
@@ -190,7 +162,6 @@ function buildProfile(auth) {
 }
 
 function exportToAgent(agentId, profile) {
-  // 1. Write auth profile
   const authProfilesPath = getAuthProfilesPath(agentId);
   const currentStore = loadJsonSafe(authProfilesPath);
 
@@ -211,28 +182,42 @@ function exportToAgent(agentId, profile) {
 
   writeJsonAtomic(authProfilesPath, nextStore, 0o600);
 
-  // 2. Update models.json — add/replace anthropic provider so models appear in `openclaw models list`
-  const modelsPath = getModelsPath(agentId);
-  const currentModels = loadJsonSafe(modelsPath);
-  const currentProviders = isPlainObject(currentModels.providers) ? currentModels.providers : {};
-
-  const nextModels = {
-    ...currentModels,
-    providers: {
-      ...currentProviders,
-      anthropic: ANTHROPIC_MODELS_PROVIDER,
-    },
-  };
-
-  writeJsonAtomic(modelsPath, nextModels, 0o644);
-
   return authProfilesPath;
 }
 
 /**
- * Syncs clw-auth credentials into one or more OpenClaw agent profile stores.
- * When no agentId is provided in options, lists available agents and prompts
- * the user to select which to export to.
+ * Adds Claude models to agents.defaults.model.fallbacks in ~/.openclaw/openclaw.json
+ * so that 'openclaw models list' recognises and displays them.
+ * Idempotent — skips models that are already present.
+ */
+function updateOpenClawConfig() {
+  const cfg = loadJsonSafe(OPENCLAW_CONFIG_PATH);
+
+  if (!isPlainObject(cfg.agents))                cfg.agents = {};
+  if (!isPlainObject(cfg.agents.defaults))        cfg.agents.defaults = {};
+  if (!isPlainObject(cfg.agents.defaults.model))  cfg.agents.defaults.model = {};
+
+  const model = cfg.agents.defaults.model;
+  if (!Array.isArray(model.fallbacks)) model.fallbacks = [];
+
+  const added = [];
+  for (const m of CLAUDE_FALLBACK_MODELS) {
+    if (!model.fallbacks.includes(m)) {
+      model.fallbacks.push(m);
+      added.push(m);
+    }
+  }
+
+  if (added.length > 0) {
+    writeJsonAtomic(OPENCLAW_CONFIG_PATH, cfg, 0o644);
+  }
+
+  return { added, configPath: OPENCLAW_CONFIG_PATH };
+}
+
+/**
+ * Syncs clw-auth credentials into one or more OpenClaw agent profile stores
+ * and updates the global OpenClaw config so models appear in 'openclaw models list'.
  *
  * @param {{ agentId?: string } | undefined} options
  */
@@ -268,6 +253,16 @@ export async function run(options = {}) {
 
   console.log(`\nExported to ${succeeded} agent${succeeded !== 1 ? 's' : ''}.${failed > 0 ? ` ${failed} failed.` : ''}`);
   console.log(`Profile: ${OPENCLAW_PROFILE_NAME}  |  Auth type: ${profile.type}`);
+
+  // Update ~/.openclaw/openclaw.json fallbacks so models appear in 'openclaw models list'.
+  const configUpdate = updateOpenClawConfig();
+
+  if (configUpdate.added.length > 0) {
+    console.log(`\n✔  Added to openclaw.json fallbacks: ${configUpdate.added.join(', ')}`);
+    console.log(`   Run: openclaw gateway restart`);
+  } else {
+    console.log(`\n✔  openclaw.json fallbacks already up to date.`);
+  }
 
   return results;
 }
