@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-07
+
+### Added
+
+- **auto-sync exporters after token refresh** — Anthropic rotates refresh tokens on every renewal. If clw-auth cron refreshes the token, any store that holds the old refresh token (e.g. OpenClaw auth-profiles.json) loses the ability to refresh independently. After a successful oauth refresh, syncExportersAfterRefresh() silently calls runExporter('openclaw', { allConfigured: true }) to push the new tokens to every OpenClaw agent that has an anthropic:default profile. Non-fatal: if the sync fails the cron still completes and logs the error.
+- **add allConfigured option for silent non-interactive sync** — When options.allConfigured is true, run() exports silently to every agent that already has an anthropic:default profile, without prompting. Used by cron auto-sync after token refresh to keep auth-profiles.json current after token rotation.
+
+
 ## [0.7.3] - 2026-04-07
 
 ### Fixed
@@ -207,7 +215,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/4i3n6/clw-auth/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/4i3n6/clw-auth/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/4i3n6/clw-auth/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/4i3n6/clw-auth/compare/v0.7.0...v0.7.1
