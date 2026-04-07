@@ -1,6 +1,6 @@
 {
   "name": "claude-oauth",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "Standalone Anthropic OAuth credential manager",
   "type": "module",
   "private": false,
