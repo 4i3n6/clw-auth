@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-07
+
+### Fixed
+
+- **use git reset --hard <tag> instead of checkout** — git checkout --force still fails when local changes exist in the install directory. git reset --hard <tag> moves HEAD directly to the target tag AND discards all local changes atomically — no separate checkout step needed.
+- **reset working tree before checkout to avoid conflicts** — git checkout on a tag fails when there are uncommitted local changes in the install directory. The install dir is managed by clw-auth and local modifications are unexpected — reset --hard before checkout discards them and allows the update to proceed cleanly.
+
+
 ## [0.4.0] - 2026-04-07
 
 ### Added
@@ -110,7 +118,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/4i3n6/clw-auth/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/4i3n6/clw-auth/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/4i3n6/clw-auth/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/clw-auth/clw-auth/compare/v0.1.0...v0.2.0
