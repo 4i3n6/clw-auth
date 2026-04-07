@@ -1,4 +1,4 @@
-# claude-oauth
+# clw-auth
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Release](https://img.shields.io/github/v/release/4i3n6/clw-auth?color=blue)](https://github.com/4i3n6/clw-auth/releases)
@@ -17,7 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/4i3n6/clw-auth/master/scripts/insta
 Then run the interactive setup wizard:
 
 ```bash
-claude-oauth auth-setup
+clw-auth auth-setup
 ```
 
 > **Manual install**: clone the repo and run `node src/cli.mjs` directly — no build step required.
@@ -34,7 +34,7 @@ claude-oauth auth-setup
 ## How it works
 
 ```
-claude-oauth (this project)
+clw-auth (this project)
     |
     |-- auth.json          (credentials: access, refresh, expires)
     |-- api-reference.json (how to call: endpoint, headers, authorization)
@@ -56,7 +56,7 @@ No system is special. This project produces standardized files in `~/.local/shar
 ## Structure
 
 ```
-claude-oauth/
+clw-auth/
   src/
     cli.mjs              # Entry point + command dispatch
     store.mjs            # Atomic persistence (auth.json, api-reference.json, config.json)
@@ -70,6 +70,8 @@ claude-oauth/
       opencode.mjs       # OpenCode exporter
       openclaw.mjs       # OpenClaw exporter
   scripts/
+    install.sh           # One-liner system installer
+    auth-tui.mjs         # Interactive setup wizard
     setup-cron.mjs       # Installs cron entry (idempotent)
   CHANGELOG.md
   LICENSE
@@ -86,6 +88,7 @@ claude-oauth/
 | `config.json` | 600 | Beta headers and user-agent |
 | `cron.lock` | 600 | Concurrency execution lock |
 | `debug.log` | 600 | JSONL operation log |
+| `cron.log` | — | Stdout/stderr of every cron execution |
 
 ### Example `api-reference.json`
 
@@ -113,23 +116,17 @@ Any system reads this file and makes the call. No plugin, no patch, no coupling.
 ### OAuth (recommended)
 
 ```bash
-# 1. Generate login URL
-node src/cli.mjs oauth-url
-
-# 2. Open in browser, complete login, copy the returned code#state
-
-# 3. Exchange for tokens
-node src/cli.mjs oauth-exchange "code#state"
-
-# 4. Verify
-node src/cli.mjs status
+clw-auth oauth-url                        # 1. Generate login URL
+# Open in browser, complete login, copy code#state
+clw-auth oauth-exchange "code#state"      # 2. Exchange for tokens
+clw-auth status                           # 3. Verify
 ```
 
 ### API key
 
 ```bash
-node src/cli.mjs api "$ANTHROPIC_API_KEY"
-node src/cli.mjs status
+clw-auth api "$ANTHROPIC_API_KEY"
+clw-auth status
 ```
 
 ## Commands
@@ -137,94 +134,88 @@ node src/cli.mjs status
 ### Core
 
 ```bash
-claude-oauth oauth-url                    # Generate OAuth URL (PKCE)
-claude-oauth oauth-exchange <input>       # Exchange code#state for tokens
-claude-oauth refresh                      # Renew OAuth token
-claude-oauth status                       # Current auth status
-claude-oauth doctor                       # Status + api-ref + config + sources
-claude-oauth api <key>                    # Save API key
+clw-auth oauth-url                    # Generate OAuth URL (PKCE)
+clw-auth oauth-exchange <input>       # Exchange code#state for tokens
+clw-auth refresh                      # Renew OAuth token
+clw-auth status                       # Current auth status
+clw-auth doctor                       # Status + api-ref + config + sources
+clw-auth api <key>                    # Save API key
 ```
 
 ### API reference
 
 ```bash
-claude-oauth api-ref                      # Print api-reference.json
-claude-oauth api-ref-update               # Regenerate api-reference.json
+clw-auth api-ref                      # Print api-reference.json
+clw-auth api-ref-update               # Regenerate api-reference.json
 ```
 
 ### Config
 
 ```bash
-claude-oauth config                       # Print current config
-claude-oauth set-betas <csv|none>         # Set beta headers
-claude-oauth set-user-agent <ua|default>  # Set user-agent
-claude-oauth config-reset                 # Restore defaults
+clw-auth config                       # Print current config
+clw-auth set-betas <csv|none>         # Set beta headers
+clw-auth set-user-agent <ua|default>  # Set user-agent
+clw-auth config-reset                 # Restore defaults
 ```
 
 ### Upstream
 
 ```bash
-claude-oauth upstream-check               # Compare local config vs Anthropic docs
-claude-oauth sources                      # Print monitored URLs
+clw-auth upstream-check               # Compare local config vs Anthropic docs
+clw-auth sources                      # Print monitored URLs
 ```
 
 ### Exporters
 
 ```bash
-claude-oauth export                       # List available exporters
-claude-oauth export opencode              # Export config to OpenCode
-claude-oauth export openclaw              # Export credentials to OpenClaw
+clw-auth export                       # List available exporters
+clw-auth export opencode              # Export credentials to OpenCode
+clw-auth export openclaw              # Export credentials to OpenClaw
 ```
 
 ### Maintenance
 
 ```bash
-claude-oauth cron-run                     # Run maintenance (for cron/launchd)
+clw-auth cron-install                 # Install cron job (every 6 hours)
+clw-auth cron-status                  # Check cron installation + last run
+clw-auth cron-logs [n]                # Print last N lines of cron log
+clw-auth cron-run                     # Run maintenance manually
 ```
 
 ## Automatic maintenance (cron)
 
-Install a cron entry to run every 6 hours:
-
 ```bash
-node scripts/setup-cron.mjs
+clw-auth cron-install                 # Install (idempotent)
+clw-auth cron-status                  # Check installation and last run
+clw-auth cron-logs                    # View execution log
 ```
 
-The cron runs:
-1. OAuth refresh if token expires in less than 1 hour
-2. Collect upstream data (Anthropic docs)
-3. Automatically update user-agent if stale
-4. Regenerate api-reference.json
-5. Report beta header drift (without auto-modifying)
+The cron runs every 6 hours and:
 
-Manual run:
-
-```bash
-node src/cli.mjs cron-run
-```
+1. Refreshes OAuth token if it expires within 1 hour
+2. Collects upstream data from Anthropic docs
+3. Automatically updates user-agent if stale
+4. Regenerates `api-reference.json`
+5. Reports beta header drift (without auto-modifying)
 
 ## Exporters
-
-The exporter system allows integration with any tool without coupling the core.
 
 ### OpenCode
 
 ```bash
-node src/cli.mjs export opencode
+clw-auth export opencode
 ```
 
-This exporter:
-- Copies credentials to `~/.local/share/opencode/auth.json` (preserves other providers)
-- Generates Anthropic plugin at `~/.config/opencode/plugins/claude-oauth-anthropic.mjs`
-- Patches `~/.config/opencode/opencode.json` to include the plugin
+- Copies OAuth credentials to `~/.local/share/opencode/auth.json`
+- Generates Anthropic auth plugin at `~/.config/opencode/plugins/claude-oauth-anthropic.mjs`
+- Patches `~/.config/opencode/opencode.json` to register the plugin
 
 ### OpenClaw
 
 ```bash
-node src/cli.mjs export openclaw
+clw-auth export openclaw
 ```
 
-This exporter:
 - Syncs OAuth or API key credentials to `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`
 
 ### Adding a new exporter
@@ -238,18 +229,19 @@ The core does not change. Each exporter reads `auth.json` and `api-reference.jso
 
 ```bash
 # Copy to another machine
-scp -r ~/Sistemas/claude-oauth user@host:~/claude-oauth
+scp -r ~/.local/share/clw-auth user@host:~/.local/share/clw-auth
 
-# On destination machine, authenticate
-node ~/claude-oauth/src/cli.mjs oauth-url
-node ~/claude-oauth/src/cli.mjs oauth-exchange "code#state"
-node ~/claude-oauth/src/cli.mjs status
+# On destination, re-link the binary
+ln -sf ~/.local/share/clw-auth/src/cli.mjs ~/.local/bin/clw-auth
 
-# Optional: export to OpenCode
-node ~/claude-oauth/src/cli.mjs export opencode
+# Authenticate
+clw-auth oauth-url
+clw-auth oauth-exchange "code#state"
+clw-auth status
 
-# Optional: install cron
-node ~/claude-oauth/scripts/setup-cron.mjs
+# Export and install cron
+clw-auth export opencode
+clw-auth cron-install
 ```
 
 ## Monitored upstream sources
