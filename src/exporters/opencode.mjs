@@ -1202,10 +1202,21 @@ function printSummary(summary) {
   console.log(`- Plugin default user-agent: ${summary.runtimeConfig.userAgent}`);
 }
 
+const OAUTH_REQUIRED_BETAS = Object.freeze(['oauth-2025-04-20']);
+
 export async function run() {
   const auth = validateOauthAuth(loadAuth());
   const apiRef = loadApiRef();
   const runtimeConfig = extractRuntimeConfigDefaults(apiRef);
+
+  // oauth-2025-04-20 is required for every OAuth bearer token request.
+  // Anthropic returns 401 without it regardless of token validity.
+  // Merge into betaHeaders regardless of what api-reference.json contains.
+  for (const beta of OAUTH_REQUIRED_BETAS) {
+    if (!runtimeConfig.betaHeaders.includes(beta)) {
+      runtimeConfig.betaHeaders.unshift(beta);
+    }
+  }
   const authSummary = updateOpenCodeAuth(auth);
   const pluginSummary = writePluginFile(runtimeConfig);
   const configSummary = patchOpenCodeConfig(pluginSummary.uri);
