@@ -13,11 +13,11 @@ import { pathToFileURL } from 'node:url';
 
 import { loadAuth, loadApiRef } from '../store.mjs';
 
-const CLAUDE_DATA_DIR = join(homedir(), '.local', 'share', 'claude-oauth');
+const CLW_DATA_DIR = join(homedir(), '.local', 'share', 'clw-auth');
 const OPENCODE_AUTH_PATH = join(homedir(), '.local', 'share', 'opencode', 'auth.json');
 const OPENCODE_CONFIG_PATH = join(homedir(), '.config', 'opencode', 'opencode.json');
 const OPENCODE_CONFIG_JSONC_PATH = join(homedir(), '.config', 'opencode', 'opencode.jsonc');
-const OPENCODE_PLUGIN_PATH = join(homedir(), '.config', 'opencode', 'plugins', 'claude-oauth-anthropic.mjs');
+const OPENCODE_PLUGIN_PATH = join(homedir(), '.config', 'opencode', 'plugins', 'clw-auth-anthropic.mjs');
 const OPENCODE_SCHEMA_URL = 'https://opencode.ai/config.json';
 const DEFAULT_RUNTIME_CONFIG = Object.freeze({
   schemaVersion: 1,
@@ -25,8 +25,11 @@ const DEFAULT_RUNTIME_CONFIG = Object.freeze({
   userAgent: 'claude-cli/2.1.92 (external, cli)',
 });
 const OH_MY_PLUGIN_ANCHORS = new Set(['oh-my-opencode@latest', 'oh-my-openagent@latest']);
-const LEGACY_PLUGIN_NAME = 'opencode-anthropic-auth-patched.mjs';
-const GENERATED_PLUGIN_NAME = 'claude-oauth-anthropic.mjs';
+const LEGACY_PLUGIN_NAMES = new Set([
+  'opencode-anthropic-auth-patched.mjs',
+  'claude-oauth-anthropic.mjs',
+]);
+const GENERATED_PLUGIN_NAME = 'clw-auth-anthropic.mjs';
 
 const BETA_HEADER_PATHS = [
   ['betaHeaders'],
@@ -399,7 +402,7 @@ function patchOpenCodeConfig(pluginUri) {
   let removedLegacyPlugins = 0;
 
   for (const pluginEntry of currentPlugins) {
-    if (isPluginReferenceMatch(pluginEntry, LEGACY_PLUGIN_NAME)) {
+    if ([...LEGACY_PLUGIN_NAMES].some((name) => isPluginReferenceMatch(pluginEntry, name))) {
       removedLegacyPlugins += 1;
       continue;
     }
@@ -467,7 +470,7 @@ function buildPluginSource(defaultRuntimeConfig) {
     "];",
     "const RATE_LIMIT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];",
     "const TOOL_PREFIX = 'mcp_';",
-    "const DATA_DIR = join(homedir(), '.local', 'share', 'claude-oauth');",
+    "const DATA_DIR = join(homedir(), '.local', 'share', 'clw-auth');",
     "const AUTH_PATH = join(DATA_DIR, 'auth.json');",
     "const CONFIG_PATH = join(DATA_DIR, 'config.json');",
     "const DEBUG_LOG_PATH = join(homedir(), '.local', 'state', 'opencode', 'anthropic-auth-debug.log');",
@@ -1136,8 +1139,8 @@ export async function run() {
     config: configSummary,
     runtimeConfig,
     source: {
-      authPath: join(CLAUDE_DATA_DIR, 'auth.json'),
-      apiRefPath: join(CLAUDE_DATA_DIR, 'api-reference.json'),
+      authPath: join(CLW_DATA_DIR, 'auth.json'),
+      apiRefPath: join(CLW_DATA_DIR, 'api-reference.json'),
     },
   };
 
