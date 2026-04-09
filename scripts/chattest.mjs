@@ -484,8 +484,8 @@ function buildConnectionLines(width) {
 
 function buildFooter(width) {
   const footer = state.isRequestInFlight
-    ? 'q/Ctrl+C: quit | Enter: wait | Ctrl+L: clear after response'
-    : 'q/Ctrl+C: quit | Enter: send | Ctrl+L: clear chat';
+    ? 'Ctrl+C: quit | Enter: wait | Ctrl+L: clear after response'
+    : 'Ctrl+C: quit | Enter: send | Ctrl+L: clear chat';
 
   return ` ${c.dim(ellipsizeEnd(footer, Math.max(1, width - 1)))}`;
 }
@@ -1115,11 +1115,6 @@ function handleKeypress(key) {
   if (key === '\u007f' || key === '\b' || key === '\u0008') {
     state.inputBuffer = state.inputBuffer.slice(0, -1);
     scheduleRender(true);
-    return;
-  }
-
-  if (key === 'q' && state.inputBuffer.length === 0) {
-    exitGracefully(0);
     return;
   }
 
