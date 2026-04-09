@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -11,6 +12,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { loadConfig } from '../config.mjs';
 import { loadAuth, loadApiRef } from '../store.mjs';
 
 const CLW_DATA_DIR = join(homedir(), '.local', 'share', 'clw-auth');
@@ -21,8 +23,17 @@ const OPENCODE_PLUGIN_PATH = join(homedir(), '.config', 'opencode', 'plugins', '
 const OPENCODE_SCHEMA_URL = 'https://opencode.ai/config.json';
 const DEFAULT_RUNTIME_CONFIG = Object.freeze({
   schemaVersion: 1,
-  betaHeaders: ['oauth-2025-04-20', 'interleaved-thinking-2025-05-14'],
-  userAgent: 'claude-cli/2.1.92 (external, cli)',
+  betaHeaders: [
+    'oauth-2025-04-20',
+    'claude-code-20250219',
+    'interleaved-thinking-2025-05-14',
+    'advanced-tool-use-2025-11-20',
+    'context-management-2025-06-27',
+    'prompt-caching-scope-2026-01-05',
+    'effort-2025-11-24',
+    'fast-mode-2026-02-01',
+  ],
+  userAgent: 'claude-cli/2.1.97 (external, cli)',
 });
 const OH_MY_PLUGIN_ANCHORS = new Set(['oh-my-opencode@latest', 'oh-my-openagent@latest']);
 const LEGACY_PLUGIN_NAMES = new Set([
@@ -444,7 +455,7 @@ function patchOpenCodeConfig(pluginUri) {
   };
 }
 
-function buildPluginSource(defaultRuntimeConfig) {
+function buildPluginSource(defaultRuntimeConfig, ccVersion, deviceId) {
   const serializedDefaultConfig = JSON.stringify(defaultRuntimeConfig, null, 2);
 
   return [
@@ -458,7 +469,7 @@ function buildPluginSource(defaultRuntimeConfig) {
     "  unlinkSync,",
     "  writeFileSync,",
     "} from 'node:fs';",
-    "import { randomBytes, createHash } from 'node:crypto';",
+    "import { randomBytes, createHash, randomUUID } from 'node:crypto';",
     "import { homedir } from 'node:os';",
     "import { dirname, join } from 'node:path';",
     '',
@@ -471,6 +482,13 @@ function buildPluginSource(defaultRuntimeConfig) {
     "];",
     "const RATE_LIMIT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];",
     "const TOOL_PREFIX = 'mcp_';",
+    // Billing fingerprint constants — must match real CC's utils/fingerprint.ts.
+    // CC_VERSION and CC_DEVICE_ID are baked in at export time; SESSION_ID refreshes per process.
+    `const CC_VERSION = '${ccVersion}';`,
+    `const CC_DEVICE_ID = '${deviceId}';`,
+    "const CC_SESSION_ID = randomUUID();",
+    "const BILLING_HASH_SALT = '59cf53e54c78';",
+    "const BILLING_HASH_INDICES = [4, 7, 20];",
     "const DATA_DIR = join(homedir(), '.local', 'share', 'clw-auth');",
     "const AUTH_PATH = join(DATA_DIR, 'auth.json');",
     "const CONFIG_PATH = join(DATA_DIR, 'config.json');",
@@ -814,6 +832,53 @@ function buildPluginSource(defaultRuntimeConfig) {
     '  }',
     '}',
     '',
+    // ── Billing fingerprint (Layer 1) ────────────────────────────────────────
+    // Replicates CC's computeFingerprint() in utils/fingerprint.ts:
+    //   SHA256(salt + msg[4] + msg[7] + msg[20] + version)[:3]
+    'function extractFirstUserText(parsed) {',
+    "  if (!Array.isArray(parsed.messages)) return '';",
+    "  const msg = parsed.messages.find(m => m && m.role === 'user');",
+    "  if (!msg) return '';",
+    "  if (typeof msg.content === 'string') return msg.content;",
+    '  if (Array.isArray(msg.content)) {',
+    "    const block = msg.content.find(b => b && b.type === 'text' && typeof b.text === 'string');",
+    "    return block ? block.text : '';",
+    '  }',
+    "  return '';",
+    '}',
+    '',
+    'function computeBillingFingerprint(text) {',
+    "  const chars = BILLING_HASH_INDICES.map(i => text[i] || '0').join('');",
+    '  const input = BILLING_HASH_SALT + chars + CC_VERSION;',
+    "  return createHash('sha256').update(input).digest('hex').slice(0, 3);",
+    '}',
+    '',
+    'function buildBillingBlock(parsed) {',
+    '  const text = extractFirstUserText(parsed);',
+    '  const fingerprint = computeBillingFingerprint(text);',
+    "  return { type: 'text', text: 'x-anthropic-billing-header: cc_version=' + CC_VERSION + '.' + fingerprint + '; cc_entrypoint=cli; cch=00000;' };",
+    '}',
+    '',
+    // ── Stainless SDK identity headers (Layer 2) ─────────────────────────────
+    // Real CC sends these on every request; absence flags the session as non-CC.
+    'function getStainlessHeaders() {',
+    "  const osName = process.platform === 'darwin' ? 'macOS' : process.platform === 'win32' ? 'Windows' : 'Linux';",
+    "  const arch = process.arch === 'x64' ? 'x64' : process.arch === 'arm64' ? 'arm64' : process.arch;",
+    '  return {',
+    "    'x-app': 'cli',",
+    "    'x-claude-code-session-id': CC_SESSION_ID,",
+    "    'x-stainless-arch': arch,",
+    "    'x-stainless-lang': 'js',",
+    "    'x-stainless-os': osName,",
+    "    'x-stainless-package-version': '0.81.0',",
+    "    'x-stainless-runtime': 'node',",
+    "    'x-stainless-runtime-version': process.version,",
+    "    'x-stainless-retry-count': '0',",
+    "    'x-stainless-timeout': '600',",
+    "    'anthropic-dangerous-direct-browser-access': 'true',",
+    '  };',
+    '}',
+    '',
     'function sanitizeSystemText(value) {',
     "  return typeof value === 'string'",
     "    ? value.replace(/OpenCode/g, 'Claude Code').replace(/opencode/gi, 'Claude')",
@@ -888,6 +953,19 @@ function buildPluginSource(defaultRuntimeConfig) {
     '          }),',
     '        };',
     '      });',
+    '    }',
+    '',
+    '    // Inject billing header as the first system content block (Layer 1).',
+    '    // Must be position 0 to match CC fingerprint position expectations.',
+    '    const billingBlock = buildBillingBlock(parsed);',
+    '    if (Array.isArray(parsed.system)) {',
+    '      // Normalize any plain strings to content blocks for API consistency.',
+    "      parsed.system = parsed.system.map(item => typeof item === 'string' ? { type: 'text', text: item } : item);",
+    '      parsed.system.unshift(billingBlock);',
+    "    } else if (typeof parsed.system === 'string') {",
+    "      parsed.system = [billingBlock, { type: 'text', text: parsed.system }];",
+    '    } else {',
+    '      parsed.system = [billingBlock];',
     '    }',
     '',
     '    return JSON.stringify(parsed);',
@@ -1128,6 +1206,14 @@ function buildPluginSource(defaultRuntimeConfig) {
     "            requestHeaders.set('user-agent', runtimeConfig.userAgent);",
     "            requestHeaders.delete('x-api-key');",
     '',
+    '            // Inject CC identity headers (Stainless SDK fingerprint — Layer 2).',
+    '            // These signal to Anthropic that the request originates from Claude Code CLI,',
+    '            // which routes billing to the subscription plan instead of Extra Usage.',
+    '            const ccHeaders = getStainlessHeaders();',
+    '            for (const [k, v] of Object.entries(ccHeaders)) {',
+    '              requestHeaders.set(k, v);',
+    '            }',
+    '',
     '            const body = rewriteRequestBody(requestInit.body);',
     '            const requestInput = withMessagesBetaQuery(input);',
     '            const fetchInit = {',
@@ -1171,8 +1257,8 @@ function buildPluginSource(defaultRuntimeConfig) {
   ].join('\n');
 }
 
-function writePluginFile(defaultRuntimeConfig) {
-  const pluginSource = buildPluginSource(defaultRuntimeConfig);
+function writePluginFile(defaultRuntimeConfig, ccVersion, deviceId) {
+  const pluginSource = buildPluginSource(defaultRuntimeConfig, ccVersion, deviceId);
   writeTextAtomic(OPENCODE_PLUGIN_PATH, `${pluginSource}\n`, 0o600);
 
   return {
@@ -1200,25 +1286,44 @@ function printSummary(summary) {
 
   console.log(`- Plugin default beta headers: ${summary.runtimeConfig.betaHeaders.join(', ')}`);
   console.log(`- Plugin default user-agent: ${summary.runtimeConfig.userAgent}`);
+  console.log(`- Plugin CC version (billing fingerprint): ${summary.ccVersion}`);
 }
 
-const OAUTH_REQUIRED_BETAS = Object.freeze(['oauth-2025-04-20']);
+// Both betas required: oauth-2025-04-20 for bearer token auth, claude-code-20250219
+// to signal a Claude Code session and route billing to the subscription plan.
+const OAUTH_REQUIRED_BETAS = Object.freeze(['oauth-2025-04-20', 'claude-code-20250219']);
 
 export async function run() {
   const auth = validateOauthAuth(loadAuth());
   const apiRef = loadApiRef();
   const runtimeConfig = extractRuntimeConfigDefaults(apiRef);
 
-  // oauth-2025-04-20 is required for every OAuth bearer token request.
-  // Anthropic returns 401 without it regardless of token validity.
+  // oauth-2025-04-20 and claude-code-20250219 are required for every OAuth
+  // bearer token request and CC session identification respectively.
   // Merge into betaHeaders regardless of what api-reference.json contains.
   for (const beta of OAUTH_REQUIRED_BETAS) {
     if (!runtimeConfig.betaHeaders.includes(beta)) {
       runtimeConfig.betaHeaders.unshift(beta);
     }
   }
+
+  // Resolve CC version for billing fingerprint:
+  // prefer stored config (auto-updated by cron via `claude --version`),
+  // fall back to version embedded in user-agent, then hardcoded default.
+  const storedConfig = loadConfig();
+  const ccVersion = storedConfig.ccVersion
+    || (runtimeConfig.userAgent.match(/claude-cli\/(\d+\.\d+\.\d+)/i)?.[1] ?? '2.1.97');
+
+  // Force userAgent to derive from ccVersion so both are always in sync.
+  // This overwrites whatever api-reference.json had stored.
+  runtimeConfig.userAgent = `claude-cli/${ccVersion} (external, cli)`;
+
+  // Device ID: stable for the lifetime of this plugin installation.
+  // Rotates each time `clw-auth export opencode` is re-run.
+  const deviceId = randomBytes(32).toString('hex');
+
   const authSummary = updateOpenCodeAuth(auth);
-  const pluginSummary = writePluginFile(runtimeConfig);
+  const pluginSummary = writePluginFile(runtimeConfig, ccVersion, deviceId);
   const configSummary = patchOpenCodeConfig(pluginSummary.uri);
 
   const summary = {
@@ -1227,6 +1332,7 @@ export async function run() {
     plugin: pluginSummary,
     config: configSummary,
     runtimeConfig,
+    ccVersion,
     source: {
       authPath: join(CLW_DATA_DIR, 'auth.json'),
       apiRefPath: join(CLW_DATA_DIR, 'api-reference.json'),
