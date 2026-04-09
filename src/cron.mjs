@@ -83,6 +83,10 @@ const resolveRuntimeConfig = (persistedConfig, upstreamConfig) => {
     nextConfig.userAgent = upstreamConfig.userAgent.trim();
   }
 
+  if (typeof upstreamConfig.ccVersion === 'string' && /^\d+\.\d+\.\d+$/.test(upstreamConfig.ccVersion.trim())) {
+    nextConfig.ccVersion = upstreamConfig.ccVersion.trim();
+  }
+
   return nextConfig;
 };
 
@@ -241,6 +245,7 @@ export async function runCron() {
       buildUpdatedUserAgent,
       collectUpstreamData,
       compareVersions,
+      detectLocalCcVersion,
       extractUserAgentVersion,
       printSources,
     } = upstreamModule;
@@ -306,6 +311,26 @@ export async function runCron() {
       actions.push('user-agent unchanged (latest upstream version not detected)');
     } else {
       actions.push('user-agent unchanged (current version could not be detected)');
+    }
+
+    // Detect CC version from local `claude --version` to keep the billing fingerprint accurate.
+    // This runs on every cron tick so any Claude Code update is automatically picked up.
+    const localCcVersion = detectLocalCcVersion();
+    const storedCcVersion = persistedConfig.ccVersion;
+
+    if (localCcVersion) {
+      if (!storedCcVersion || compareVersions(localCcVersion, storedCcVersion) !== 0) {
+        upstream.config = saveConfig({ ...upstream.config, ccVersion: localCcVersion });
+        actions.push(`cc-version updated: ${storedCcVersion ?? 'none'} → ${localCcVersion}`);
+        debugLog('cron-cc-version-updated', {
+          previous: storedCcVersion ?? null,
+          current: localCcVersion,
+        });
+      } else {
+        actions.push(`cc-version up to date: ${localCcVersion}`);
+      }
+    } else {
+      actions.push('cc-version detection skipped (claude not found in PATH)');
     }
 
     const apiReferenceResult = await Promise.resolve(generateApiReference());
