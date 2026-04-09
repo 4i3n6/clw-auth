@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-04-09
+
+### Fixed
+
+- **align plugin requests with the working chattest flow** — Reads JSON bodies from Request inputs as well as init.body so the billing block is injected even when OpenCode passes a Request object. Also forces anthropic-version and content-type headers to match the known-good chattest request path, preventing malformed Anthropic requests that bypass subscription billing detection.
+- **require Ctrl+C to exit the troubleshooting TUI** — Removes the q-to-quit shortcut so the chat test only exits via Ctrl+C. This prevents accidental shutdowns while troubleshooting live Anthropic connectivity and keeps the footer instructions aligned with the actual controls.
+
+
 ## [0.9.0] - 2026-04-09
 
 ### Added
@@ -226,7 +234,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/4i3n6/clw-auth/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/4i3n6/clw-auth/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/4i3n6/clw-auth/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/4i3n6/clw-auth/compare/v0.7.2...v0.7.3
