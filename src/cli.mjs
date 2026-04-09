@@ -86,6 +86,10 @@ const COMMAND_GROUPS = [
         summary: 'Set the runtime User-Agent string.',
       },
       {
+        usage: 'set-cc-version <version>',
+        summary: 'Override the Claude Code version used in the billing fingerprint.',
+      },
+      {
         usage: 'config-reset',
         summary: 'Reset runtime config to defaults.',
       },
@@ -135,6 +139,15 @@ const COMMAND_GROUPS = [
       {
         usage: 'cron-run',
         summary: 'Run scheduled maintenance tasks manually.',
+      },
+    ],
+  },
+  {
+    title: 'Troubleshooting',
+    commands: [
+      {
+        usage: 'chattest',
+        summary: 'Open the connectivity TUI for Anthropic chat streaming tests.',
       },
     ],
   },
@@ -273,6 +286,18 @@ const COMMAND_HELP = new Map([
     },
   ],
   [
+    'set-cc-version',
+    {
+      usage: 'set-cc-version <version>',
+      description: 'Manually set the Claude Code version used to compute the billing fingerprint injected into every request. Auto-updated by cron via `claude --version`. Use this when the cron cannot run (e.g. claude not in PATH in cron context).',
+      examples: [
+        'clw-auth set-cc-version 2.1.98',
+        '# Or let cron detect it automatically:',
+        'clw-auth cron-run',
+      ],
+    },
+  ],
+  [
     'config-reset',
     {
       usage: 'config-reset',
@@ -334,6 +359,14 @@ const COMMAND_HELP = new Map([
       usage: 'cron-run',
       description: 'Run maintenance tasks manually: conditional OAuth refresh, upstream data collection, user-agent update, api-reference regeneration.',
       examples: ['clw-auth cron-run'],
+    },
+  ],
+  [
+    'chattest',
+    {
+      usage: 'chattest',
+      description: 'Open the alternate-screen chat TUI for live Anthropic API connectivity troubleshooting, header inspection, and streaming validation.',
+      examples: ['clw-auth chattest'],
     },
   ],
   [
@@ -559,8 +592,14 @@ const runCommand = async (command, args) => {
       const { fileURLToPath: fu } = await import('node:url');
       const tuiPath = fu(new URL('../scripts/auth-tui.mjs', import.meta.url));
       const result = spawnSync(process.execPath, [tuiPath], { stdio: 'inherit' });
-      process.exit(result.status ?? 0);
-      return;
+      return process.exit(result.status ?? 0);
+    }
+    case 'chattest': {
+      const { spawnSync } = await import('node:child_process');
+      const { fileURLToPath: fu } = await import('node:url');
+      const path = fu(new URL('../scripts/chattest.mjs', import.meta.url));
+      const result = spawnSync(process.execPath, [path], { stdio: 'inherit' });
+      return process.exit(result.status ?? 0);
     }
     case 'oauth-url': {
       const { buildOauthUrl } = await loadAuthModule();
@@ -619,6 +658,12 @@ const runCommand = async (command, args) => {
       const userAgent = requireInput(args, 'set-user-agent <ua|default>');
       const { setUserAgent } = await loadConfigModule();
       await Promise.resolve(setUserAgent(userAgent));
+      return;
+    }
+    case 'set-cc-version': {
+      const version = requireInput(args, 'set-cc-version <version>');
+      const { setCcVersion } = await loadConfigModule();
+      await Promise.resolve(setCcVersion(version));
       return;
     }
     case 'config-reset': {
