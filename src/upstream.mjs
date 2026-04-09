@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+
 import { loadConfig } from './config.mjs';
 
 const FETCH_TIMEOUT_MS = 15_000;
@@ -102,6 +104,27 @@ export function extractUserAgentVersion(userAgent) {
 
   const match = userAgent.match(/claude-cli\/(\d+\.\d+\.\d+)/i);
   return match?.[1] ?? null;
+}
+
+/**
+ * Runs `claude --version` locally and returns the parsed SemVer string.
+ * Returns null when Claude Code is not installed or not in PATH.
+ *
+ * @returns {string | null}
+ */
+export function detectLocalCcVersion() {
+  try {
+    const output = execSync('claude --version', {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    // Output format: "2.1.98 (Claude Code)"
+    const match = output.match(/^(\d+\.\d+\.\d+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
 }
 
 export function compareVersions(left, right) {
