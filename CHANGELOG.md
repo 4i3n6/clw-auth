@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-04-09
+
+### Added
+
+- **add connectivity TUI and set-cc-version CLI command** — Adds chattest command: a split-pane TUI for live Anthropic API connectivity troubleshooting. Left pane shows chat history with real-time streaming; right sidebar shows auth status, ccVersion, beta headers, last request HTTP status and latency, billing fingerprint, and Stainless headers checklist. Adds set-cc-version <version> for manual ccVersion override when cron cannot auto-detect it.
+- **inject CC billing fingerprint and Stainless identity headers** — Injects x-anthropic-billing-header (SHA256 fingerprint per request, matching CC computeFingerprint logic) and Stainless SDK identity headers (x-app, x-claude-code-session-id, x-stainless-*) into every API request. Updates beta headers to the full 8-header Claude Code set and forces userAgent to derive from ccVersion. Fixes requests routing to Extra Usage instead of subscription billing.
+- **auto-detect and persist ccVersion from local Claude Code** — Cron now calls detectLocalCcVersion() on each run and persists the version to config.json when it differs from the stored value. Keeps the billing fingerprint accurate whenever Claude Code auto-updates on the system.
+- **add detectLocalCcVersion to read local claude --version** — Adds detectLocalCcVersion() which runs claude --version and parses the semver output (e.g. '2.1.98 (Claude Code)' → '2.1.98'). Returns null silently when Claude Code is not in PATH, enabling safe use in cron environments.
+- **add ccVersion field for billing fingerprint tracking** — Adds ccVersion to runtime config (default 2.1.97) to drive the SHA256 billing fingerprint injected into every Anthropic API request. Includes setCcVersion() for manual override and updated printConfig(). Also expands DEFAULT_BETA_HEADERS to the full 8-header Claude Code set required for subscription billing.
+
+
 ## [0.8.0] - 2026-04-07
 
 ### Added
@@ -215,7 +226,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/4i3n6/clw-auth/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/4i3n6/clw-auth/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/4i3n6/clw-auth/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/4i3n6/clw-auth/compare/v0.7.1...v0.7.2
