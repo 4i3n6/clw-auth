@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateConfiguredAuth, buildOauthProfile, buildApiProfile } from '../src/exporters/openclaw.mjs';
+import {
+  validateConfiguredAuth,
+  buildOauthProfile,
+  buildApiProfile,
+  buildAnthropicRequestHeaders,
+  applyAnthropicProviderOverrides,
+} from '../src/exporters/openclaw.mjs';
 
 describe('validateConfiguredAuth', () => {
   it('passes valid oauth auth through unchanged', () => {
@@ -86,5 +92,65 @@ describe('buildApiProfile', () => {
 
   it('throws when key is not a string', () => {
     assert.throws(() => buildApiProfile({ type: 'api', key: 123 }), /API key/);
+  });
+});
+
+describe('buildAnthropicRequestHeaders', () => {
+  const runtimeConfig = {
+    betaHeaders: ['oauth-2025-04-20', 'claude-code-20250219'],
+    userAgent: 'claude-cli/2.1.98 (external, cli)',
+  };
+
+  it('builds the Claude Code-like Anthropic header set', () => {
+    const headers = buildAnthropicRequestHeaders(runtimeConfig, 'session-123');
+
+    assert.equal(headers['anthropic-version'], '2023-06-01');
+    assert.equal(headers['anthropic-beta'], 'oauth-2025-04-20,claude-code-20250219');
+    assert.equal(headers['user-agent'], 'claude-cli/2.1.98 (external, cli)');
+    assert.equal(headers['x-app'], 'cli');
+    assert.equal(headers['x-claude-code-session-id'], 'session-123');
+    assert.equal(headers['x-stainless-lang'], 'js');
+    assert.equal(headers['x-stainless-runtime'], 'node');
+    assert.equal(headers['x-stainless-retry-count'], '0');
+    assert.equal(headers['x-stainless-timeout'], '600');
+    assert.equal(headers['anthropic-dangerous-direct-browser-access'], 'true');
+    assert.equal(headers['accept-encoding'], 'identity');
+  });
+});
+
+describe('applyAnthropicProviderOverrides', () => {
+  const runtimeConfig = {
+    betaHeaders: ['oauth-2025-04-20', 'claude-code-20250219'],
+    userAgent: 'claude-cli/2.1.98 (external, cli)',
+  };
+
+  it('creates provider headers and request headers without losing existing provider config', () => {
+    const current = {
+      models: {
+        providers: {
+          anthropic: {
+            baseUrl: 'https://api.anthropic.com',
+            api: 'anthropic-messages',
+            models: [{ id: 'claude-haiku-4-5' }],
+            headers: { 'x-existing': 'keep-me' },
+            request: { headers: { 'x-request-existing': 'keep-too' } },
+          },
+          qwen: { baseUrl: 'https://example.com' },
+        },
+      },
+    };
+
+    const next = applyAnthropicProviderOverrides(current, runtimeConfig, 'session-123');
+
+    assert.equal(next.models.providers.qwen.baseUrl, 'https://example.com');
+    assert.equal(next.models.providers.anthropic.baseUrl, 'https://api.anthropic.com');
+    assert.equal(next.models.providers.anthropic.api, 'anthropic-messages');
+    assert.deepEqual(next.models.providers.anthropic.models, [{ id: 'claude-haiku-4-5' }]);
+    assert.equal(next.models.providers.anthropic.headers['x-existing'], 'keep-me');
+    assert.equal(next.models.providers.anthropic.headers['anthropic-version'], '2023-06-01');
+    assert.equal(next.models.providers.anthropic.headers['anthropic-beta'], 'oauth-2025-04-20,claude-code-20250219');
+    assert.equal(next.models.providers.anthropic.request.headers['x-request-existing'], 'keep-too');
+    assert.equal(next.models.providers.anthropic.request.headers['x-app'], 'cli');
+    assert.equal(next.models.providers.anthropic.request.headers['x-claude-code-session-id'], 'session-123');
   });
 });

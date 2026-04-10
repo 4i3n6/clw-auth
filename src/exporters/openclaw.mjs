@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 
+import { loadConfig } from '../config.mjs';
 import {
   loadAuth,
   writeJsonAtomic,
@@ -21,12 +23,26 @@ const CLAUDE_FALLBACK_MODELS = Object.freeze([
   'anthropic/claude-haiku-4-5',
 ]);
 
+const OPENCLAW_STAINLESS_PACKAGE_VERSION = '0.81.0';
+
 export const DESCRIPTION = 'Sync clw-auth credentials into OpenClaw auth profiles.';
 
 const OPENCLAW_PROFILE_NAME = 'anthropic:default';
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mapRuntimeOs() {
+  if (process.platform === 'darwin') return 'macOS';
+  if (process.platform === 'win32') return 'Windows';
+  return 'Linux';
+}
+
+function mapRuntimeArch() {
+  if (process.arch === 'arm64') return 'arm64';
+  if (process.arch === 'x64') return 'x64';
+  return process.arch;
 }
 
 function loadJsonSafe(filePath) {
@@ -157,6 +173,67 @@ export function buildApiProfile(auth) {
   };
 }
 
+export function buildAnthropicRequestHeaders(runtimeConfig, sessionId = randomUUID()) {
+  return {
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': runtimeConfig.betaHeaders.join(','),
+    'user-agent': runtimeConfig.userAgent,
+    'x-app': 'cli',
+    'x-claude-code-session-id': sessionId,
+    'x-stainless-arch': mapRuntimeArch(),
+    'x-stainless-lang': 'js',
+    'x-stainless-os': mapRuntimeOs(),
+    'x-stainless-package-version': OPENCLAW_STAINLESS_PACKAGE_VERSION,
+    'x-stainless-runtime': 'node',
+    'x-stainless-runtime-version': process.version,
+    'x-stainless-retry-count': '0',
+    'x-stainless-timeout': '600',
+    'anthropic-dangerous-direct-browser-access': 'true',
+    'accept-encoding': 'identity',
+  };
+}
+
+export function applyAnthropicProviderOverrides(openClawConfig, runtimeConfig, sessionId = randomUUID()) {
+  const cfg = isPlainObject(openClawConfig) ? { ...openClawConfig } : {};
+
+  if (!isPlainObject(cfg.models)) cfg.models = {};
+  if (!isPlainObject(cfg.models.providers)) cfg.models.providers = {};
+
+  const currentAnthropic = isPlainObject(cfg.models.providers.anthropic)
+    ? cfg.models.providers.anthropic
+    : {};
+
+  const currentRequest = isPlainObject(currentAnthropic.request)
+    ? currentAnthropic.request
+    : {};
+
+  const nextHeaders = {
+    ...(isPlainObject(currentAnthropic.headers) ? currentAnthropic.headers : {}),
+    'anthropic-version': '2023-06-01',
+    'anthropic-beta': runtimeConfig.betaHeaders.join(','),
+    'user-agent': runtimeConfig.userAgent,
+  };
+
+  const nextRequestHeaders = {
+    ...(isPlainObject(currentRequest.headers) ? currentRequest.headers : {}),
+    ...buildAnthropicRequestHeaders(runtimeConfig, sessionId),
+  };
+
+  cfg.models.providers = {
+    ...cfg.models.providers,
+    anthropic: {
+      ...currentAnthropic,
+      headers: nextHeaders,
+      request: {
+        ...currentRequest,
+        headers: nextRequestHeaders,
+      },
+    },
+  };
+
+  return cfg;
+}
+
 function buildProfile(auth) {
   return auth.type === 'oauth' ? buildOauthProfile(auth) : buildApiProfile(auth);
 }
@@ -191,7 +268,8 @@ function exportToAgent(agentId, profile) {
  * Idempotent — skips models that are already present.
  */
 function updateOpenClawConfig() {
-  const cfg = loadJsonSafe(OPENCLAW_CONFIG_PATH);
+  const runtimeConfig = loadConfig();
+  let cfg = loadJsonSafe(OPENCLAW_CONFIG_PATH);
 
   if (!isPlainObject(cfg.agents))                cfg.agents = {};
   if (!isPlainObject(cfg.agents.defaults))        cfg.agents.defaults = {};
@@ -208,11 +286,17 @@ function updateOpenClawConfig() {
     }
   }
 
-  if (added.length > 0) {
-    writeJsonAtomic(OPENCLAW_CONFIG_PATH, cfg, 0o644);
-  }
+  const sessionId = randomUUID();
+  cfg = applyAnthropicProviderOverrides(cfg, runtimeConfig, sessionId);
 
-  return { added, configPath: OPENCLAW_CONFIG_PATH };
+  writeJsonAtomic(OPENCLAW_CONFIG_PATH, cfg, 0o644);
+
+  return {
+    added,
+    configPath: OPENCLAW_CONFIG_PATH,
+    sessionId,
+    runtimeHeaders: buildAnthropicRequestHeaders(runtimeConfig, sessionId),
+  };
 }
 
 /**
@@ -269,10 +353,15 @@ export async function run(options = {}) {
 
     if (configUpdate.added.length > 0) {
       console.log(`\n✔  Added to openclaw.json fallbacks: ${configUpdate.added.join(', ')}`);
-      console.log(`   Run: openclaw gateway restart`);
     } else {
       console.log(`\n✔  openclaw.json fallbacks already up to date.`);
     }
+
+    console.log(`✔  OpenClaw Anthropic runtime headers synced`);
+    console.log(`   User-Agent: ${configUpdate.runtimeHeaders['user-agent']}`);
+    console.log(`   Beta headers: ${configUpdate.runtimeHeaders['anthropic-beta']}`);
+    console.log(`   Session header: ${configUpdate.runtimeHeaders['x-claude-code-session-id']}`);
+    console.log(`   Run: openclaw gateway restart`);
   } else {
     updateOpenClawConfig();
   }
