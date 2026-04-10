@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-04-10
+
+### Fixed
+
+- **sync Anthropic runtime headers into the OpenClaw provider config** — Extends the OpenClaw exporter to mirror the Claude Code-like Anthropic request fingerprint directly into `models.providers.anthropic` and `models.providers.anthropic.request.headers` inside `openclaw.json`. This keeps Anthropic versioning, beta headers, user-agent, `x-app`, `x-claude-code-session-id`, and Stainless identity headers aligned with the working OpenCode path whenever `clw-auth export openclaw` runs.
+
 ## [0.9.2] - 2026-04-10
 
 ### Fixed
@@ -241,7 +247,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/4i3n6/clw-auth/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/4i3n6/clw-auth/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/4i3n6/clw-auth/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/4i3n6/clw-auth/compare/v0.8.0...v0.9.0
