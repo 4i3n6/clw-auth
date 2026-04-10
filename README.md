@@ -195,6 +195,8 @@ clw-auth sources                      # Print monitored URLs
 clw-auth export                       # List available exporters
 clw-auth export opencode              # Export credentials to OpenCode
 clw-auth export openclaw              # Export credentials to OpenClaw
+clw-auth export openclaw --agent <id> # Export to a specific OpenClaw agent
+clw-auth export openclaw --all-configured # Export to all OpenClaw agents with existing anthropic:default profile
 ```
 
 ### Maintenance
@@ -238,6 +240,8 @@ clw-auth export opencode
 
 ```bash
 clw-auth export openclaw
+clw-auth export openclaw --agent <agentId>
+clw-auth export openclaw --all-configured
 ```
 
 - Syncs OAuth or API key credentials to `~/.openclaw/agents/<agentId>/agent/auth-profiles.json`

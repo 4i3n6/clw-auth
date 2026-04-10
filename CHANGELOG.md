@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-04-10
+
+### Fixed
+
+- **expose openclaw export targeting options in CLI** — Add `clw-auth export openclaw --agent <agentId>` and `clw-auth export openclaw --all-configured` support so `clw-auth` can explicitly target one OpenClaw agent or sync all preconfigured agents without a confirmation loop.
+
 ## [0.9.3] - 2026-04-10
 
 ### Fixed
@@ -247,7 +253,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/4i3n6/clw-auth/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/4i3n6/clw-auth/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/4i3n6/clw-auth/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/4i3n6/clw-auth/compare/v0.9.0...v0.9.1

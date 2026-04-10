@@ -326,7 +326,12 @@ const COMMAND_HELP = new Map([
     {
       usage: 'export [system]',
       description: 'Without an argument, list exporters. With a system name, run that exporter.',
-      examples: ['clw-auth export', 'clw-auth export system-name'],
+      examples: [
+        'clw-auth export',
+        'clw-auth export openclaw',
+        'clw-auth export openclaw --agent default',
+        'clw-auth export openclaw --all-configured',
+      ],
     },
   ],
   [
@@ -404,6 +409,55 @@ const requireInput = (values, usage) => {
   }
 
   return input;
+};
+
+const parseOpenclawExportArgs = (values) => {
+  const options = {};
+
+  for (let i = 0; i < values.length; i += 1) {
+    const arg = values[i];
+
+    if (arg === '--agent' || arg === '-a') {
+      const value = values[i + 1];
+
+      if (!isNonEmptyString(value) || value.startsWith('-')) {
+        throw new Error('Usage: clw-auth export openclaw --agent <agentId>');
+      }
+
+      options.agentId = value;
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--all-configured') {
+      options.allConfigured = true;
+      continue;
+    }
+
+    if (arg === '--help') {
+      throw new Error('Usage: clw-auth export openclaw [--agent <agentId> | --all-configured]');
+    }
+
+    throw new Error(`Unknown option for openclaw export: ${arg}`);
+  }
+
+  if (options.agentId && options.allConfigured) {
+    throw new Error('Use either --agent or --all-configured for openclaw export, not both.');
+  }
+
+  return options;
+};
+
+const parseExportArgs = (args) => {
+  const [system = '', ...rest] = args;
+  if (system !== 'openclaw') {
+    return { system, options: undefined };
+  }
+
+  return {
+    system,
+    options: parseOpenclawExportArgs(rest),
+  };
 };
 
 const resolveCommandName = (command) => COMMAND_ALIASES.get(command) ?? command;
@@ -689,7 +743,8 @@ const runCommand = async (command, args) => {
         return;
       }
 
-      await runExporter(args[0]);
+      const { system, options } = parseExportArgs(args);
+      await runExporter(system, options);
       return;
     }
     case 'cron-install': {
