@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { shouldRefreshOauth, splitCodeAndState } from '../src/auth.mjs';
 
-const HOUR_MS = 60 * 60 * 1000;
+const REFRESH_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 describe('shouldRefreshOauth', () => {
   it('returns false for api key auth', () => {
@@ -23,7 +23,7 @@ describe('shouldRefreshOauth', () => {
   });
 
   it('returns false when token has plenty of time left', () => {
-    const expires = Date.now() + 3 * HOUR_MS;
+    const expires = Date.now() + 8 * 60 * 60 * 1000;
     assert.equal(shouldRefreshOauth({ type: 'oauth', access: 'a', refresh: 'r', expires }), false);
   });
 
@@ -32,8 +32,13 @@ describe('shouldRefreshOauth', () => {
     assert.equal(shouldRefreshOauth({ type: 'oauth', access: 'a', refresh: 'r', expires }), true);
   });
 
-  it('returns true exactly at the 1-hour boundary', () => {
-    const expires = Date.now() + HOUR_MS - 1;
+  it('returns true exactly at the 6-hour boundary', () => {
+    const expires = Date.now() + REFRESH_WINDOW_MS - 1;
+    assert.equal(shouldRefreshOauth({ type: 'oauth', access: 'a', refresh: 'r', expires }), true);
+  });
+
+  it('returns true when token expires before the next 6-hour cron tick', () => {
+    const expires = Date.now() + 4 * 60 * 60 * 1000;
     assert.equal(shouldRefreshOauth({ type: 'oauth', access: 'a', refresh: 'r', expires }), true);
   });
 });

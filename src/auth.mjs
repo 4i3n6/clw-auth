@@ -13,7 +13,10 @@ const TOKEN_ENDPOINTS = [
 ];
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
 const FETCH_TIMEOUT_MS = 15000;
-const OAUTH_REFRESH_WINDOW_MS = 60 * 60 * 1000;
+// The maintenance cron runs every 6 hours. The refresh window must cover at
+// least one full cron interval, otherwise a token can expire between ticks and
+// never be refreshed in time.
+const OAUTH_REFRESH_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 const isObject = (value) => value !== null && typeof value === 'object';
 

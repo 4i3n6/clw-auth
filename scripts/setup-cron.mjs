@@ -14,9 +14,10 @@ import { homedir } from "node:os";
 const HOME = homedir();
 const PROJECT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI_PATH = resolve(PROJECT_DIR, "src", "cli.mjs");
+const NODE_PATH = process.execPath;
 const LOG_PATH = join(HOME, ".local", "share", "clw-auth", "cron.log");
 
-const CRON_LINE = `0 */6 * * * node "${CLI_PATH}" cron-run >> "${LOG_PATH}" 2>&1`;
+const CRON_LINE = `0 */6 * * * "${NODE_PATH}" "${CLI_PATH}" cron-run >> "${LOG_PATH}" 2>&1`;
 
 function getCurrentCrontab() {
   try {
@@ -27,14 +28,18 @@ function getCurrentCrontab() {
 }
 
 const current = getCurrentCrontab();
+const existingEntry = current.split("\n").find((line) => line.includes("clw-auth") && !line.trim().startsWith("#"));
 
-if (current.includes("clw-auth")) {
-  console.log("Cron entry already exists. No changes made.");
-  console.log(`\nDetected entry:\n${current.split("\n").find((l) => l.includes("clw-auth"))}`);
-  process.exit(0);
+if (existingEntry?.trim() === CRON_LINE) {
+    console.log("Cron entry already exists. No changes made.");
+    console.log(`\nDetected entry:\n${existingEntry}`);
+    process.exit(0);
 }
 
-const next = (current.trimEnd() + "\n" + CRON_LINE + "\n").trimStart();
+const retainedLines = current
+    .split("\n")
+    .filter((line) => !(line.includes("clw-auth") && !line.trim().startsWith("#")));
+const next = `${retainedLines.join("\n").trimEnd()}\n${CRON_LINE}\n`.trimStart();
 
 const result = spawnSync("crontab", ["-"], {
   input: next,
@@ -46,6 +51,6 @@ if (result.status !== 0) {
   process.exit(1);
 }
 
-console.log("Cron entry installed successfully.");
+console.log(existingEntry ? "Cron entry updated successfully." : "Cron entry installed successfully.");
 console.log(`\nAdded entry:\n${CRON_LINE}`);
 console.log(`\nLogs will be written to:\n${LOG_PATH}`);

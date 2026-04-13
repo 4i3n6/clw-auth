@@ -13,8 +13,21 @@ import { loadConfig, saveConfig } from './config.mjs';
 import { debugLog, getCronLockPath, getCronLogPath, getDebugLogPath } from './store.mjs';
 
 const CLI_PATH = fileURLToPath(new URL('./cli.mjs', import.meta.url));
+const NODE_PATH = process.execPath;
 
+const CRON_SCHEDULE = '0 */6 * * *';
+const CRON_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const CRON_LOCK_TTL_MS = 24 * 60 * 60 * 1000;
+const CRON_STALE_THRESHOLD_MS = CRON_INTERVAL_MS + (60 * 60 * 1000);
+const CRON_LOG_ERROR_PATTERNS = [
+  /\/bin\/sh: .*command not found/i,
+  /^error:/i,
+  /oauth token request failed/i,
+  /failed to /i,
+  /permission denied/i,
+  /exception/i,
+  /traceback/i,
+];
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -22,9 +35,76 @@ const getErrorCode = (error) => (isObject(error) && typeof error.code === 'strin
 
 const getErrorMessage = (error) => (error instanceof Error ? error.message : String(error));
 
+const parseJsonLine = (line) => {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return null;
+  }
+};
+
+const getTimestampMs = (entry) => {
+  const timestamp = typeof entry?.ts === 'string' ? Date.parse(entry.ts) : Number.NaN;
+  return Number.isFinite(timestamp) ? timestamp : Number.NaN;
+};
+
 const loadUpstreamModule = () => import(new URL('./upstream.mjs', import.meta.url).href);
 
 const loadApiReferenceModule = () => import(new URL('./api-reference.mjs', import.meta.url).href);
+
+export function buildCronLine(cliPath = CLI_PATH, logPath = getCronLogPath(), nodePath = NODE_PATH) {
+  return `${CRON_SCHEDULE} "${nodePath}" "${cliPath}" cron-run >> "${logPath}" 2>&1`;
+}
+
+export function getLatestCronRunRecord(logContents) {
+  if (typeof logContents !== 'string' || !logContents.trim()) {
+    return null;
+  }
+
+  let latestEntry = null;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+
+  for (const line of logContents.split('\n')) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    const entry = parseJsonLine(line);
+
+    if (!entry || (entry.event !== 'cron-run-completed' && entry.event !== 'cron-run-failed')) {
+      continue;
+    }
+
+    const timestamp = getTimestampMs(entry);
+
+    if (!Number.isFinite(timestamp) || timestamp < latestTimestamp) {
+      continue;
+    }
+
+    latestEntry = entry;
+    latestTimestamp = timestamp;
+  }
+
+  return latestEntry;
+}
+
+export function getRecentCronLogIssue(logContents) {
+  if (typeof logContents !== 'string' || !logContents.trim()) {
+    return null;
+  }
+
+  const lines = logContents.split('\n').filter(Boolean);
+  const lastSuccessIndex = lines.lastIndexOf('Cron maintenance summary:');
+  const relevantLines = lastSuccessIndex >= 0 ? lines.slice(lastSuccessIndex) : lines;
+
+  for (const line of [...relevantLines].reverse()) {
+    if (CRON_LOG_ERROR_PATTERNS.some((pattern) => pattern.test(line))) {
+      return line.trim();
+    }
+  }
+
+  return null;
+}
 
 const readCronLockTimestamp = (lockPath) => {
   if (!existsSync(lockPath)) {
@@ -215,6 +295,12 @@ async function syncExportersAfterRefresh(actions) {
   try {
     const { runExporter, EXPORTERS } = await import('./exporters/index.mjs');
 
+    if (EXPORTERS.has('opencode')) {
+      await runExporter('opencode');
+      actions.push('opencode credentials synced after token rotation');
+      debugLog('cron-exporter-synced', { exporter: 'opencode' });
+    }
+
     // OpenClaw: sync all agents that already have an anthropic profile.
     if (EXPORTERS.has('openclaw')) {
       await runExporter('openclaw', { allConfigured: true });
@@ -359,7 +445,7 @@ export async function runCron() {
 
 export function installCron() {
   const logPath = getCronLogPath();
-  const cronLine = `0 */6 * * * node "${CLI_PATH}" cron-run >> "${logPath}" 2>&1`;
+  const cronLine = buildCronLine(CLI_PATH, logPath);
 
   let current = '';
   try {
@@ -368,20 +454,23 @@ export function installCron() {
 
   const existingEntry = current.split('\n').find((l) => l.includes('clw-auth') && !l.trim().startsWith('#'));
 
-  if (existingEntry) {
+  if (existingEntry?.trim() === cronLine) {
     console.log('Cron entry already installed. No changes made.');
     console.log(`Entry: ${existingEntry.trim()}`);
     return;
   }
 
-  const next = `${current.trimEnd()}\n${cronLine}\n`.trimStart();
+  const retainedLines = current
+    .split('\n')
+    .filter((line) => !(line.includes('clw-auth') && !line.trim().startsWith('#')));
+  const next = `${retainedLines.join('\n').trimEnd()}\n${cronLine}\n`.trimStart();
   const result = spawnSync('crontab', ['-'], { input: next, stdio: ['pipe', 'inherit', 'inherit'] });
 
   if (result.status !== 0) {
     throw new Error('Failed to install cron entry. Check crontab access.');
   }
 
-  console.log('Cron entry installed.');
+  console.log(existingEntry ? 'Cron entry updated.' : 'Cron entry installed.');
   console.log(`Entry:  ${cronLine}`);
   console.log(`Logs:   ${logPath}`);
 }
@@ -404,31 +493,23 @@ export function printCronStatus() {
   console.log('');
 
   const debugLogPath = getDebugLogPath();
+  let latestRun = null;
 
   if (existsSync(debugLogPath)) {
-    const lines = readFileSync(debugLogPath, 'utf8').split('\n').filter(Boolean);
+    latestRun = getLatestCronRunRecord(readFileSync(debugLogPath, 'utf8'));
 
-    const findLast = (event) => [...lines].reverse().find((l) => {
-      try { return JSON.parse(l).event === event; } catch { return false; }
-    });
-
-    const lastOk   = findLast('cron-run-completed');
-    const lastFail = findLast('cron-run-failed');
-
-    if (lastOk) {
-      try {
-        const entry = JSON.parse(lastOk);
-        console.log(`Last run:  ${entry.ts} (ok)`);
-        if (Array.isArray(entry.details?.actions)) {
-          for (const action of entry.details.actions) console.log(`           - ${action}`);
+    if (latestRun?.event === 'cron-run-completed') {
+      console.log(`Last run:  ${latestRun.ts} (ok)`);
+      if (Array.isArray(latestRun.details?.actions)) {
+        for (const action of latestRun.details.actions) {
+          console.log(`           - ${action}`);
         }
-      } catch { /* ignore */ }
-    } else if (lastFail) {
-      try {
-        const entry = JSON.parse(lastFail);
-        console.log(`Last run:  ${entry.ts} (failed)`);
-        if (entry.details?.error) console.log(`           Error: ${entry.details.error}`);
-      } catch { /* ignore */ }
+      }
+    } else if (latestRun?.event === 'cron-run-failed') {
+      console.log(`Last run:  ${latestRun.ts} (failed)`);
+      if (latestRun.details?.error) {
+        console.log(`           Error: ${latestRun.details.error}`);
+      }
     } else {
       console.log('Last run:  not found in debug log.');
     }
@@ -448,11 +529,37 @@ export function printCronStatus() {
   const logPath = getCronLogPath();
   console.log(`Log:       ${logPath}`);
 
+  const healthNotes = [];
+
+  if (cronEntry && !cronEntry.includes(`"${NODE_PATH}"`)) {
+    healthNotes.push(`installed cron entry is not pinned to the current Node executable (${NODE_PATH})`);
+  }
+
+  const latestRunTimestamp = getTimestampMs(latestRun);
+  if (Number.isFinite(latestRunTimestamp) && latestRunTimestamp < (Date.now() - CRON_STALE_THRESHOLD_MS)) {
+    healthNotes.push('last recorded cron run is older than 7 hours');
+  }
+
+  if (existsSync(logPath)) {
+    const recentIssue = getRecentCronLogIssue(readFileSync(logPath, 'utf8'));
+    if (recentIssue) {
+      healthNotes.push(`recent cron log issue: ${recentIssue}`);
+    }
+  }
+
   if (existsSync(logPath)) {
     const { size } = statSync(logPath);
     console.log(`Log size:  ${(size / 1024).toFixed(1)} KB`);
   } else {
     console.log('Log size:  not created yet');
+  }
+
+  if (healthNotes.length > 0) {
+    console.log('');
+    console.log('Health:    degraded');
+    for (const note of healthNotes) {
+      console.log(`           - ${note}`);
+    }
   }
 }
 
