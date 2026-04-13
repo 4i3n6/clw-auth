@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-04-13
+
+### Fixed
+
+- **harden scheduled OAuth maintenance and cron diagnostics** — Pins the installed cron entry to the active Node executable so macOS cron can actually run `clw-auth` outside an interactive shell. Expands the OAuth refresh window to cover the full 6-hour cron cadence, replaces stale-entry reuse with in-place cron updates, and makes `cron-status` report the latest real run plus concrete health issues from the current execution context.
+- **sync OpenCode after token rotation to avoid refresh-token drift** — Anthropic rotates refresh tokens on renewal, so cron now re-exports OpenCode credentials immediately after a successful refresh instead of only updating OpenClaw. This keeps downstream stores aligned with the newly rotated token set.
+
+### Changed
+
+- **run cron coverage in the release gate** — Adds the new cron-focused tests to both `npm test` and `scripts/release.mjs` so automated releases validate maintenance-path behavior before creating a tag.
+
 ## [0.9.4] - 2026-04-10
 
 ### Fixed
@@ -253,7 +264,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/4i3n6/clw-auth/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/4i3n6/clw-auth/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/4i3n6/clw-auth/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/4i3n6/clw-auth/compare/v0.9.1...v0.9.2
