@@ -34,10 +34,20 @@ clw-auth tui
 ## Update
 
 ```bash
-clw-auth update
+clw-auth update            # Interactive: prompts before applying
+clw-auth update --check    # Read-only probe; exit 10 if an update is available
+clw-auth update --yes      # Apply without confirmation (required for cron/CI)
 ```
 
 Fetches the latest release tag from GitHub and updates the installation in place. No shell reload required — the symlink stays the same, files update transparently.
+
+When more than one release sits between the local install and the latest tag, `update` prints the full update path (e.g. `v0.9.4 → v0.9.5 → v0.9.6`) so you can correlate with the CHANGELOG before confirming.
+
+`--check` exit codes: `0` up to date or ahead of upstream, `10` update available, `2` error. Useful in shell prompts and CI freshness gates:
+
+```bash
+clw-auth update --check >/dev/null && echo "clw-auth: update available"
+```
 
 ## What it does
 
@@ -103,7 +113,8 @@ clw-auth/
 | `auth.json.bak` | 600 | Automatic backup before any write |
 | `api-reference.json` | 644 | Endpoint + headers + authorization ready for consumption |
 | `config.json` | 600 | Beta headers and user-agent |
-| `cron.lock` | 600 | Concurrency execution lock |
+| `cron.lock` | 600 | Concurrency lock for the maintenance cron (TTL 24h) |
+| `ensure-fresh.lock` | 600 | Concurrency lock for on-demand refresh (TTL 30s) |
 | `debug.log` | 600 | JSONL operation log |
 | `cron.log` | — | Stdout/stderr of every cron execution |
 
@@ -152,8 +163,11 @@ clw-auth status
 
 ```bash
 clw-auth tui                          # Interactive setup wizard (auth + export)
-clw-auth update                       # Update to latest release from GitHub
+clw-auth update [--check|--yes]       # Update to latest release from GitHub
+clw-auth version [--json]             # Print version, commit, runtime, paths
 ```
+
+Both `clw-auth --version` (concise one-liner) and `clw-auth version` (full snapshot) are supported. The `version` subcommand reports the package version, git commit and tag, commit timestamp, Node.js version, platform, install directory, and data directory — useful for issue reports and CI introspection. Use `--json` for a stable machine-readable shape.
 
 ### Core
 
@@ -202,11 +216,33 @@ clw-auth export openclaw --all-configured # Export to all OpenClaw agents with e
 ### Maintenance
 
 ```bash
+clw-auth ensure-fresh                 # On-demand OAuth refresh (no-op if fresh)
 clw-auth cron-install                 # Install cron job (every 6 hours)
 clw-auth cron-status                  # Check cron installation + last run
 clw-auth cron-logs [n]                # Print last N lines of cron log
 clw-auth cron-run                     # Run maintenance manually
 ```
+
+## On-demand refresh (`ensure-fresh`)
+
+`ensure-fresh` is a zero-cost guard you can place immediately before any outbound request that depends on `api-reference.json`. It:
+
+1. Reads `auth.json` and decides if a refresh is needed (token expires within 5 minutes).
+2. If fresh — exits in milliseconds, no network IO.
+3. If stale — acquires a short-lived file lock (`ensure-fresh.lock`), refreshes the OAuth token, regenerates `api-reference.json`, and mirrors the new credentials to all configured exporters.
+4. The lock serializes concurrent callers — Anthropic rotates the refresh token on every renewal, so parallel refreshes would invalidate each other.
+
+```bash
+# Pattern: refresh-then-call. Exits non-zero on refresh failure.
+clw-auth ensure-fresh && curl -sSf "$ENDPOINT" \
+  -H "Authorization: $AUTH" \
+  -d "$PAYLOAD"
+
+# Wrap any consumer of api-reference.json the same way.
+clw-auth ensure-fresh && python my_script.py
+```
+
+You no longer need cron for token freshness — `ensure-fresh` handles it deterministically at the call site. Cron is still useful for upstream drift detection (user-agent / beta headers / `api-reference.json`).
 
 ## Automatic maintenance (cron)
 
@@ -218,7 +254,7 @@ clw-auth cron-logs                    # View execution log
 
 The cron runs every 6 hours and:
 
-1. Refreshes OAuth token if it expires within 1 hour
+1. Refreshes OAuth proactively if it expires within the next cron interval (delegates to the same primitive as `ensure-fresh`)
 2. Collects upstream data from Anthropic docs
 3. Automatically updates user-agent if stale
 4. Regenerates `api-reference.json`
