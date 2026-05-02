@@ -360,7 +360,7 @@ export const oauthExchange = async (pastedInput) => {
   return auth;
 };
 
-export const oauthRefresh = async () => {
+export const oauthRefresh = async ({ silent = false } = {}) => {
   const currentAuth = await getAuth();
 
   if (!currentAuth || currentAuth.type !== 'oauth') {
@@ -379,7 +379,10 @@ export const oauthRefresh = async () => {
   const auth = buildOauthCredential(tokenResponse, currentAuth.refresh);
 
   await Promise.resolve(saveAuth(auth));
-  printResult(buildOauthSummary('oauth-refreshed', auth));
+
+  if (!silent) {
+    printResult(buildOauthSummary('oauth-refreshed', auth));
+  }
 
   return auth;
 };
