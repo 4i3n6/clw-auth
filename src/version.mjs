@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { inspectExporters } from './exporters/index.mjs';
 import { getAuthPath } from './store.mjs';
 
 const INSTALL_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -68,14 +69,30 @@ export function collectPaths(installDir = INSTALL_DIR) {
 }
 
 /**
+ * Best-effort exporter freshness collection. Returns the array directly
+ * from the registry's inspectExporters() so the JSON shape stays stable.
+ * If introspection itself throws (extremely unlikely — each exporter's
+ * inspect() catches its own errors), we degrade to an empty array so the
+ * version output stays useful.
+ */
+export function collectExporters() {
+  try {
+    return inspectExporters();
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Pure assembly of the version snapshot. Tests construct `gitInfo`,
- * `runtime`, and `paths` directly so no IO is performed.
+ * `runtime`, `paths`, and `exporters` directly so no IO is performed.
  */
 export function buildVersionInfo({
   packageVersion = PACKAGE_VERSION,
   gitInfo,
   runtime,
   paths,
+  exporters,
 } = {}) {
   return {
     name: 'clw-auth',
@@ -83,6 +100,7 @@ export function buildVersionInfo({
     git: gitInfo ?? collectGitInfo(),
     runtime: runtime ?? collectRuntimeInfo(),
     paths: paths ?? collectPaths(),
+    exporters: exporters ?? collectExporters(),
   };
 }
 
@@ -124,7 +142,47 @@ export function formatVersionLines(info) {
   lines.push(`  install:   ${info.paths.installDir}`);
   lines.push(`  data:      ${info.paths.dataDir}`);
 
+  if (Array.isArray(info.exporters) && info.exporters.length > 0) {
+    lines.push('');
+    lines.push('  exporters:');
+    for (const exporter of info.exporters) {
+      lines.push(`    ${formatExporterLine(exporter)}`);
+    }
+  }
+
   return lines;
+}
+
+/**
+ * Render a single exporter line for the version output. Pure — accepts the
+ * exporter's inspect() result and returns a one-line string. Status is
+ * rendered as a tag in brackets so machine parsing stays trivial.
+ */
+export function formatExporterLine(exporter) {
+  const name = (exporter && exporter.name) || '(unknown)';
+  const status = (exporter && exporter.status) || 'unknown';
+  let detail = '';
+
+  if (exporter) {
+    if (status === 'up-to-date' && exporter.installedClwVersion) {
+      detail = ` v${exporter.installedClwVersion}`;
+    } else if (status === 'outdated') {
+      detail = ` v${exporter.installedClwVersion} → v${exporter.currentClwVersion} (run: clw-auth update)`;
+    } else if (status === 'ahead') {
+      detail = ` v${exporter.installedClwVersion} ahead of clw-auth v${exporter.currentClwVersion}`;
+    } else if (status === 'unknown') {
+      detail = ' (no plugin-meta header — reinstall to refresh)';
+    } else if (status === 'configured' && Array.isArray(exporter.configuredAgents)) {
+      detail = ` (${exporter.configuredAgents.length} agent${exporter.configuredAgents.length === 1 ? '' : 's'})`;
+    } else if (status === 'error' && exporter.error) {
+      detail = ` ${exporter.error}`;
+    }
+  }
+
+  // Pad name so the [status] column aligns. 10 chars covers the longest
+  // current exporter name ('opencode' = 8) plus a small margin.
+  const paddedName = name.padEnd(10, ' ');
+  return `${paddedName}[${status}]${detail}`;
 }
 
 export function printVersionInfo({ json = false } = {}) {
