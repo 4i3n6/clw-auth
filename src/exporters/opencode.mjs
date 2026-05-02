@@ -8,12 +8,17 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { loadConfig } from '../config.mjs';
 import { loadAuth, loadApiRef } from '../store.mjs';
+import { compareVersions } from '../upstream.mjs';
+
+const PACKAGE_VERSION = createRequire(import.meta.url)('../../package.json').version;
+const PLUGIN_META_MARKER = '// clw-auth-plugin-meta:';
 
 const CLW_DATA_DIR = join(homedir(), '.local', 'share', 'clw-auth');
 const OPENCODE_AUTH_PATH = join(homedir(), '.local', 'share', 'opencode', 'auth.json');
@@ -457,8 +462,18 @@ function patchOpenCodeConfig(pluginUri) {
 
 function buildPluginSource(defaultRuntimeConfig, ccVersion, deviceId) {
   const serializedDefaultConfig = JSON.stringify(defaultRuntimeConfig, null, 2);
+  // Plugin meta header — read by inspectInstall() to detect stale plugins after
+  // clw-auth upgrades. The version is the clw-auth that generated the plugin;
+  // bumping it on every release flips installed plugins to "outdated" so
+  // `clw-auth update` can reapply them automatically.
+  const pluginMeta = JSON.stringify({
+    exporter: 'opencode',
+    clwVersion: PACKAGE_VERSION,
+    generatedAt: new Date().toISOString(),
+  });
 
   return [
+    `${PLUGIN_META_MARKER} ${pluginMeta}`,
     "import {",
     "  appendFileSync,",
     "  chmodSync,",
@@ -1370,6 +1385,93 @@ function printSummary(summary) {
 // Both betas required: oauth-2025-04-20 for bearer token auth, claude-code-20250219
 // to signal a Claude Code session and route billing to the subscription plan.
 const OAUTH_REQUIRED_BETAS = Object.freeze(['oauth-2025-04-20', 'claude-code-20250219']);
+
+/**
+ * Parse the `// clw-auth-plugin-meta: {...}` header from a generated plugin
+ * source string. Returns null when the marker is missing or malformed — that
+ * happens for plugins generated before v0.9.7 or hand-edited installs.
+ */
+export function parsePluginMeta(source) {
+  if (typeof source !== 'string' || source.length === 0) {
+    return null;
+  }
+
+  // Match only on the first line so we don't accidentally pick up a marker
+  // that ended up inside a docstring further down.
+  const firstLine = source.split('\n', 1)[0] ?? '';
+  const prefix = `${PLUGIN_META_MARKER} `;
+
+  if (!firstLine.startsWith(prefix)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(firstLine.slice(prefix.length).trim());
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compare the installed opencode plugin against the current clw-auth version
+ * so `clw-auth version` can report freshness and `clw-auth update` can decide
+ * whether to reapply the exporter automatically.
+ *
+ * Status semantics:
+ *   - `not-installed`: plugin file is missing.
+ *   - `unknown`: file exists but lacks a parseable plugin-meta header. Treat
+ *     as needing reapply on update — almost certainly a pre-v0.9.7 install.
+ *   - `outdated`: header version is older than the running clw-auth.
+ *   - `ahead`: header version is newer than the running clw-auth (operator
+ *     downgraded clw-auth without reinstalling the plugin). Diagnostic only;
+ *     the plugin keeps working, so update does not reapply.
+ *   - `up-to-date`: header version equals the running clw-auth.
+ *
+ * Pure: this function only does filesystem reads. Tests can pass a custom
+ * `path` to point at a fixture and `currentVersion` to assert comparisons.
+ */
+export function inspectInstall({
+  path = OPENCODE_PLUGIN_PATH,
+  currentVersion = PACKAGE_VERSION,
+} = {}) {
+  const base = {
+    name: 'opencode',
+    paths: [path],
+    currentClwVersion: currentVersion,
+  };
+
+  if (!existsSync(path)) {
+    return { ...base, installed: false, status: 'not-installed', installedClwVersion: null };
+  }
+
+  let head;
+
+  try {
+    // Read at most ~1KB — the marker is on the very first line of the file.
+    head = readFileSync(path, 'utf8').slice(0, 1024);
+  } catch {
+    return { ...base, installed: true, status: 'unknown', installedClwVersion: null };
+  }
+
+  const meta = parsePluginMeta(head);
+
+  if (!meta || typeof meta.clwVersion !== 'string' || !meta.clwVersion) {
+    return { ...base, installed: true, status: 'unknown', installedClwVersion: null };
+  }
+
+  const installedClwVersion = meta.clwVersion;
+  let status = 'up-to-date';
+
+  if (installedClwVersion !== currentVersion) {
+    // Reuse the same numeric semver comparison the update command uses, so
+    // 0.10.0 is correctly newer than 0.9.7 etc.
+    const order = compareVersions(installedClwVersion, currentVersion);
+    status = order < 0 ? 'outdated' : order > 0 ? 'ahead' : 'up-to-date';
+  }
+
+  return { ...base, installed: true, status, installedClwVersion, generatedAt: meta.generatedAt ?? null };
+}
 
 export async function run() {
   const auth = validateOauthAuth(loadAuth());
