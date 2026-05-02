@@ -24,8 +24,8 @@ const COMMAND_GROUPS = [
         summary: 'Interactive wizard: authenticate and export to OpenCode or OpenClaw.',
       },
       {
-        usage: 'update',
-        summary: 'Update clw-auth to the latest release from GitHub.',
+        usage: 'update [--check|--yes]',
+        summary: 'Update to the latest release. --check probes only; --yes skips confirmation.',
       },
     ],
   },
@@ -199,9 +199,13 @@ const COMMAND_HELP = new Map([
   [
     'update',
     {
-      usage: 'update',
-      description: 'Fetch the latest release tag from GitHub and update the installation in place. Requires a git-managed installation (default when installed via install.sh). No shell reload required after update.',
-      examples: ['clw-auth update'],
+      usage: 'update [--check|-n] [--yes|-y]',
+      description: 'Fetch the latest release tag from GitHub and update the installation in place. Requires a git-managed installation (default when installed via install.sh). No shell reload required after update. Use --check for a read-only probe (exit code 10 means an update is available, 0 means up to date, 2 means error). Use --yes to skip the confirmation prompt — required when stdin is not a TTY. When multiple releases are pending, prints the full update path (e.g. v0.9.1 → v0.9.2 → v0.9.3) so the operator sees what is being applied.',
+      examples: [
+        'clw-auth update',
+        'clw-auth update --check',
+        'clw-auth update --yes',
+      ],
     },
   ],
   [
@@ -666,7 +670,7 @@ const runCommand = async (command, args) => {
   switch (resolvedCommand) {
     case 'update': {
       const { runUpdate } = await loadUpdateModule();
-      await runUpdate();
+      await runUpdate(args);
       return;
     }
     case 'tui': {
