@@ -8,9 +8,15 @@ import {
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { getAuth, oauthRefresh, shouldRefreshOauth } from './auth.mjs';
+import { getAuth, oauthRefresh } from './auth.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
-import { debugLog, getCronLockPath, getCronLogPath, getDebugLogPath } from './store.mjs';
+import {
+  debugLog,
+  getCronLockPath,
+  getCronLogPath,
+  getDebugLogPath,
+  getEnsureFreshLockPath,
+} from './store.mjs';
 
 const CLI_PATH = fileURLToPath(new URL('./cli.mjs', import.meta.url));
 const NODE_PATH = process.execPath;
@@ -19,6 +25,19 @@ const CRON_SCHEDULE = '0 */6 * * *';
 const CRON_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const CRON_LOCK_TTL_MS = 24 * 60 * 60 * 1000;
 const CRON_STALE_THRESHOLD_MS = CRON_INTERVAL_MS + (60 * 60 * 1000);
+
+// On-demand refresh window: the smallest safety margin we want before a
+// caller hits the network with a stale token. Independent from the much
+// larger cron-side window so cron still bulk-refreshes proactively while
+// ensure-fresh stays cheap on the hot path.
+const ENSURE_FRESH_REFRESH_WINDOW_MS = 5 * 60 * 1000;
+const ENSURE_FRESH_LOCK_TTL_MS = 30 * 1000;
+const ENSURE_FRESH_WAIT_TIMEOUT_MS = 30 * 1000;
+const ENSURE_FRESH_WAIT_INTERVAL_MS = 250;
+
+// Cron-side refresh window: must cover at least one full cron interval so
+// tokens never expire between scheduled ticks.
+const CRON_REFRESH_WINDOW_MS = CRON_INTERVAL_MS;
 const CRON_LOG_ERROR_PATTERNS = [
   /\/bin\/sh: .*command not found/i,
   /^error:/i,
@@ -104,6 +123,235 @@ export function getRecentCronLogIssue(logContents) {
   }
 
   return null;
+}
+
+/**
+ * Decide what ensure-fresh should do for the given auth payload.
+ * Pure function — no IO, no clock injection beyond `now` parameter for tests.
+ *
+ * Returned `action`:
+ *   - `'fresh'`           OAuth token is valid beyond the safety window.
+ *   - `'refresh'`         OAuth token expires within the safety window.
+ *   - `'skip-api-key'`    Auth uses an API key (never expires).
+ *   - `'skip-not-configured'` No auth configured yet.
+ *   - `'error'`           OAuth payload is malformed (missing expires/refresh).
+ */
+export function decideRefreshAction(
+  auth,
+  refreshWindowMs = ENSURE_FRESH_REFRESH_WINDOW_MS,
+  now = Date.now(),
+) {
+  if (!isObject(auth) || typeof auth.type !== 'string') {
+    return { action: 'skip-not-configured' };
+  }
+
+  if (auth.type === 'api') {
+    return { action: 'skip-api-key' };
+  }
+
+  if (auth.type !== 'oauth') {
+    return { action: 'skip-not-configured' };
+  }
+
+  const expires = Number(auth.expires);
+
+  if (!Number.isFinite(expires)) {
+    return { action: 'error', reason: 'oauth-missing-expires' };
+  }
+
+  if (typeof auth.refresh !== 'string' || !auth.refresh.trim()) {
+    return { action: 'error', reason: 'oauth-missing-refresh' };
+  }
+
+  if (expires <= (now + refreshWindowMs)) {
+    return { action: 'refresh', expires };
+  }
+
+  return { action: 'fresh', expires };
+}
+
+const sleep = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
+
+/**
+ * Acquire a generic file lock with a TTL and a bounded wait. Used by
+ * ensure-fresh so concurrent callers serialize their refresh attempts and
+ * Anthropic does not invalidate refresh tokens via parallel rotations.
+ *
+ * Returns `{ acquired: true, mode: 'fresh'|'recovered-stale' }` on success,
+ * or `{ acquired: false, mode: 'wait-timeout'|'write-failed' }` on failure.
+ */
+export async function acquireFileLockWithRetry(lockPath, options = {}) {
+  const ttl = Number.isFinite(options.ttlMs) ? options.ttlMs : ENSURE_FRESH_LOCK_TTL_MS;
+  const timeout = Number.isFinite(options.timeoutMs) ? options.timeoutMs : ENSURE_FRESH_WAIT_TIMEOUT_MS;
+  const interval = Number.isFinite(options.intervalMs) ? options.intervalMs : ENSURE_FRESH_WAIT_INTERVAL_MS;
+  const deadline = Date.now() + Math.max(timeout, 0);
+
+  while (true) {
+    try {
+      writeFileSync(lockPath, `${Date.now()}`, { flag: 'wx', mode: 0o600 });
+      return { acquired: true, mode: 'fresh' };
+    } catch (error) {
+      if (getErrorCode(error) !== 'EEXIST') {
+        return { acquired: false, mode: 'write-failed', error: getErrorMessage(error) };
+      }
+    }
+
+    let staleCleared = false;
+    try {
+      const raw = readFileSync(lockPath, 'utf8').trim();
+      const ts = Number.parseInt(raw, 10);
+
+      if (Number.isFinite(ts) && ts < (Date.now() - ttl)) {
+        try {
+          unlinkSync(lockPath);
+          staleCleared = true;
+        } catch (unlinkError) {
+          if (getErrorCode(unlinkError) !== 'ENOENT') {
+            return { acquired: false, mode: 'write-failed', error: getErrorMessage(unlinkError) };
+          }
+          staleCleared = true;
+        }
+      }
+    } catch {
+      // Lock disappeared between exists check and read — fall through and retry write.
+    }
+
+    if (staleCleared) {
+      try {
+        writeFileSync(lockPath, `${Date.now()}`, { flag: 'wx', mode: 0o600 });
+        return { acquired: true, mode: 'recovered-stale' };
+      } catch (retryError) {
+        if (getErrorCode(retryError) !== 'EEXIST') {
+          return { acquired: false, mode: 'write-failed', error: getErrorMessage(retryError) };
+        }
+      }
+    }
+
+    if (Date.now() >= deadline) {
+      return { acquired: false, mode: 'wait-timeout' };
+    }
+
+    await sleep(interval);
+  }
+}
+
+const releaseFileLock = (lockPath) => {
+  if (!existsSync(lockPath)) {
+    return;
+  }
+
+  try {
+    unlinkSync(lockPath);
+  } catch (error) {
+    if (getErrorCode(error) !== 'ENOENT') {
+      debugLog('ensure-fresh-lock-release-failed', {
+        error: getErrorMessage(error),
+        lockPath,
+      });
+    }
+  }
+};
+
+/**
+ * On-demand refresh primitive. Intended to be called immediately before any
+ * outbound request that depends on `auth.json` / `api-reference.json`.
+ *
+ * Behaviour:
+ *   - If auth uses API key or OAuth token is fresh: returns without IO.
+ *   - If OAuth token is within the safety window: acquires a file lock,
+ *     re-checks (another caller may have refreshed first), refreshes, and
+ *     mirrors the new tokens to all configured exporters.
+ *   - Refresh failures are surfaced (caller decides whether to abort the
+ *     downstream request); maintenance failures (exporters/api-reference)
+ *     are logged but do not throw.
+ */
+export async function ensureFreshAuth(options = {}) {
+  const refreshWindowMs = Number.isFinite(options.refreshWindowMs)
+    ? options.refreshWindowMs
+    : ENSURE_FRESH_REFRESH_WINDOW_MS;
+
+  const auth = await getAuth();
+  const initialDecision = decideRefreshAction(auth, refreshWindowMs);
+
+  if (initialDecision.action === 'skip-api-key') {
+    return { status: 'skipped-api-key', refreshed: false, expires: null };
+  }
+
+  if (initialDecision.action === 'skip-not-configured') {
+    return { status: 'skipped-not-configured', refreshed: false, expires: null };
+  }
+
+  if (initialDecision.action === 'error') {
+    throw new Error(`ensure-fresh: ${initialDecision.reason}`);
+  }
+
+  if (initialDecision.action === 'fresh') {
+    return { status: 'fresh', refreshed: false, expires: initialDecision.expires };
+  }
+
+  // action === 'refresh': acquire lock, re-check, refresh.
+  const lockPath = getEnsureFreshLockPath();
+  const lockResult = await acquireFileLockWithRetry(lockPath, {
+    ttlMs: ENSURE_FRESH_LOCK_TTL_MS,
+    timeoutMs: ENSURE_FRESH_WAIT_TIMEOUT_MS,
+    intervalMs: ENSURE_FRESH_WAIT_INTERVAL_MS,
+  });
+
+  if (!lockResult.acquired) {
+    debugLog('ensure-fresh-lock-unavailable', { lockPath, mode: lockResult.mode });
+    throw new Error(`ensure-fresh: could not acquire lock (${lockResult.mode})`);
+  }
+
+  debugLog('ensure-fresh-lock-acquired', { lockPath, mode: lockResult.mode });
+
+  try {
+    // Re-check after acquiring the lock — a sibling process may have refreshed
+    // while we were waiting. Anthropic rotates refresh tokens on every call,
+    // so a redundant refresh would invalidate the just-rotated token.
+    const refreshedAuth = await getAuth();
+    const recheck = decideRefreshAction(refreshedAuth, refreshWindowMs);
+
+    if (recheck.action === 'fresh') {
+      debugLog('ensure-fresh-skipped-already-fresh', { expires: recheck.expires });
+      return { status: 'fresh-by-other', refreshed: false, expires: recheck.expires };
+    }
+
+    if (recheck.action === 'skip-api-key') {
+      return { status: 'skipped-api-key', refreshed: false, expires: null };
+    }
+
+    if (recheck.action === 'error') {
+      throw new Error(`ensure-fresh: ${recheck.reason}`);
+    }
+
+    const newAuth = await oauthRefresh({ silent: true });
+    debugLog('ensure-fresh-refreshed', { expires: newAuth.expires });
+
+    const exporterActions = [];
+    await syncExportersAfterRefresh(exporterActions);
+
+    // Best-effort api-reference regeneration so consumers reading the file
+    // immediately after ensure-fresh see the new authorization header.
+    try {
+      const { generateApiReference } = await loadApiReferenceModule();
+      await Promise.resolve(generateApiReference());
+      debugLog('ensure-fresh-api-reference-regenerated');
+    } catch (error) {
+      debugLog('ensure-fresh-api-reference-failed', { error: getErrorMessage(error) });
+    }
+
+    return {
+      status: 'refreshed',
+      refreshed: true,
+      expires: newAuth.expires,
+      exporterActions,
+    };
+  } finally {
+    releaseFileLock(lockPath);
+    debugLog('ensure-fresh-lock-released', { lockPath });
+  }
 }
 
 const readCronLockTimestamp = (lockPath) => {
@@ -336,24 +584,41 @@ export async function runCron() {
       printSources,
     } = upstreamModule;
     const actions = [];
-    const auth = await getAuth();
 
     debugLog('cron-run-started');
 
-    if (shouldRefreshOauth(auth)) {
-      await oauthRefresh();
-      actions.push('oauth refreshed');
-      debugLog('cron-oauth-refreshed');
+    // Delegate proactive refresh to the same primitive that on-demand callers
+    // use, but with the wider cron window so tokens never expire between
+    // scheduled ticks. Refresh failures must not abort the maintenance sweep
+    // (drift detection / api-reference regeneration is still valuable).
+    try {
+      const ensureResult = await ensureFreshAuth({ refreshWindowMs: CRON_REFRESH_WINDOW_MS });
 
-      // Anthropic rotates refresh tokens on every renewal.
-      // Any exporter that stored the old refresh token (e.g. OpenClaw auth-profiles.json)
-      // would become unable to refresh on its own. Sync all configured exporters
-      // silently so every store has the new tokens immediately.
-      await syncExportersAfterRefresh(actions);
-    } else if (auth?.type === 'oauth') {
-      actions.push('oauth refresh not needed');
-    } else {
-      actions.push('oauth refresh skipped (not in oauth mode)');
+      switch (ensureResult.status) {
+        case 'refreshed':
+          actions.push('oauth refreshed');
+          debugLog('cron-oauth-refreshed');
+          if (Array.isArray(ensureResult.exporterActions)) {
+            for (const action of ensureResult.exporterActions) {
+              actions.push(action);
+            }
+          }
+          break;
+        case 'fresh':
+        case 'fresh-by-other':
+          actions.push('oauth refresh not needed');
+          break;
+        case 'skipped-api-key':
+        case 'skipped-not-configured':
+          actions.push('oauth refresh skipped (not in oauth mode)');
+          break;
+        default:
+          actions.push(`oauth refresh status: ${ensureResult.status}`);
+      }
+    } catch (error) {
+      const message = getErrorMessage(error);
+      actions.push(`oauth refresh failed (non-fatal): ${message}`);
+      debugLog('cron-oauth-refresh-failed', { error: message });
     }
 
     const persistedConfig = loadConfig();

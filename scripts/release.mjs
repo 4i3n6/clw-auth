@@ -219,6 +219,7 @@ function runTests() {
     res('../test/store.test.mjs'),
     res('../test/auth.test.mjs'),
     res('../test/cron.test.mjs'),
+    res('../test/ensure-fresh.test.mjs'),
     res('../test/openclaw.test.mjs'),
     res('../test/release.test.mjs'),
   ];

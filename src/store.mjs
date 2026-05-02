@@ -87,6 +87,10 @@ export function getCronLockPath() {
   return join(getDataDir(), 'cron.lock');
 }
 
+export function getEnsureFreshLockPath() {
+  return join(getDataDir(), 'ensure-fresh.lock');
+}
+
 export function getCronLogPath() {
   return join(getDataDir(), 'cron.log');
 }
