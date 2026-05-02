@@ -222,6 +222,7 @@ function runTests() {
     res('../test/ensure-fresh.test.mjs'),
     res('../test/openclaw.test.mjs'),
     res('../test/release.test.mjs'),
+    res('../test/version.test.mjs'),
   ];
 
   process.stdout.write('Running tests...\n');

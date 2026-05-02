@@ -13,6 +13,7 @@ const loadCronModule = () => import('./cron.mjs');
 const loadExportersModule = () => import('./exporters/index.mjs');
 const loadStoreModule = () => import('./store.mjs');
 const loadUpdateModule = () => import('./update.mjs');
+const loadVersionModule = () => import('./version.mjs');
 
 const COMMAND_GROUPS = [
   {
@@ -159,6 +160,10 @@ const COMMAND_GROUPS = [
     title: 'Help',
     commands: [
       {
+        usage: 'version [--json]',
+        summary: 'Print version, git commit, runtime, and install/data paths.',
+      },
+      {
         usage: 'help [command]',
         summary: 'Show grouped help or help for a specific command.',
       },
@@ -171,8 +176,16 @@ const COMMAND_HELP = new Map([
     '--version',
     {
       usage: '--version',
-      description: 'Print the installed version.',
+      description: 'Print the installed version (short form). For richer metadata use `clw-auth version`.',
       examples: ['clw-auth --version'],
+    },
+  ],
+  [
+    'version',
+    {
+      usage: 'version [--json]',
+      description: 'Print version metadata: package version, git commit and tag (when the install is git-managed), commit timestamp, Node.js version, platform/architecture, install directory, and data directory. Use --json to emit a stable machine-readable object suitable for shell scripts and CI.',
+      examples: ['clw-auth version', 'clw-auth version --json'],
     },
   ],
   [
@@ -820,6 +833,12 @@ const runCommand = async (command, args) => {
     case 'cron-run': {
       const { runCron } = await loadCronModule();
       await runCron();
+      return;
+    }
+    case 'version': {
+      const { printVersionInfo } = await loadVersionModule();
+      const json = args.includes('--json');
+      printVersionInfo({ json });
       return;
     }
     case 'help': {
