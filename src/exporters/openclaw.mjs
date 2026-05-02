@@ -238,6 +238,66 @@ function buildProfile(auth) {
   return auth.type === 'oauth' ? buildOauthProfile(auth) : buildApiProfile(auth);
 }
 
+/**
+ * Report the configured-state of the openclaw exporter.
+ *
+ * Unlike the opencode plugin, openclaw's output is a credentials JSON file
+ * (not generated code) — it never goes "stale" due to clw-auth template
+ * changes. So freshness here means "do the configured agents have an
+ * anthropic:default profile that mirrors the current clw-auth credentials?".
+ *
+ * The status semantics mirror the opencode contract closely enough for the
+ * shared exporter renderer in version.mjs and update.mjs:
+ *   - `not-configured` : no agent has anthropic:default
+ *   - `configured`     : at least one agent has anthropic:default; treated
+ *                        as up-to-date because cron / `ensure-fresh` already
+ *                        re-syncs credentials on every refresh.
+ *
+ * Pure: only filesystem reads. Tests can override `agentsDir` to point at
+ * a fixture tree.
+ */
+export function inspectInstall({ agentsDir = OPENCLAW_AGENTS_DIR } = {}) {
+  const result = {
+    name: 'openclaw',
+    paths: [],
+    currentClwVersion: null,
+    installedClwVersion: null,
+    configuredAgents: [],
+  };
+
+  if (!existsSync(agentsDir)) {
+    return { ...result, installed: false, status: 'not-configured' };
+  }
+
+  const agents = readdirSync(agentsDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .sort();
+
+  const configuredAgents = [];
+
+  for (const agentId of agents) {
+    const profilesPath = join(agentsDir, agentId, 'agent', 'auth-profiles.json');
+    const store = loadJsonSafe(profilesPath);
+
+    if (isPlainObject(store.profiles) && OPENCLAW_PROFILE_NAME in store.profiles) {
+      configuredAgents.push(agentId);
+      result.paths.push(profilesPath);
+    }
+  }
+
+  if (configuredAgents.length === 0) {
+    return { ...result, installed: false, status: 'not-configured' };
+  }
+
+  return {
+    ...result,
+    installed: true,
+    status: 'configured',
+    configuredAgents,
+  };
+}
+
 function exportToAgent(agentId, profile) {
   const authProfilesPath = getAuthProfilesPath(agentId);
   const currentStore = loadJsonSafe(authProfilesPath);
