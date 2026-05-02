@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-04-13
+
+### Added
+
+- **on-demand OAuth refresh primitive (`clw-auth ensure-fresh`)** — Adds a deterministic refresh-then-call pattern that consumers can place immediately before any outbound request. The command no-ops when the token is fresh (more than 5 minutes from expiry) or auth uses an API key, and only performs a refresh when truly needed. Concurrent callers serialize through a short-lived `ensure-fresh.lock` file (TTL 30s) so Anthropic's rotating refresh token semantics never invalidate parallel renewals. Successful refresh also regenerates `api-reference.json` and mirrors credentials to all configured exporters so every downstream store sees the new tokens immediately. Eliminates the dependency on cron timing for token freshness — cron now only needs to handle upstream drift detection.
+- **pure helpers for refresh decisioning and lock acquisition** — Exposes `decideRefreshAction(auth, refreshWindowMs, now)` and `acquireFileLockWithRetry(lockPath, options)` from `cron.mjs` so refresh policy and lock semantics are testable without network or filesystem mocking. Adds 11 unit tests covering window boundaries, malformed payloads, fresh/stale lock paths, and wait-timeout behavior.
+- **rich `clw-auth version` subcommand with `--json` output** — Adds a proper `version` subcommand alongside the existing `--version` flag. The flag form keeps its concise one-liner; the new subcommand emits a full snapshot — package version, git commit, tag (when HEAD is on a release tag), `[dirty]` indicator when the working tree has uncommitted changes, commit timestamp, Node.js version, platform/architecture, install directory, and data directory — useful for issue reports and CI introspection. `--json` emits the same structure as a stable JSON object suitable for `jq` pipelines. The new `src/version.mjs` module splits IO collection from pure formatting so the snapshot is unit-tested without git or stdout side effects.
+- **`clw-auth update --check` and `--yes` flags with TTY guard** — `update` now supports `--check` (read-only probe; exit code 10 means an update is available, 0 means up to date or ahead, 2 means error — drop-in for shell prompts and CI freshness gates), `--yes` (skip confirmation; required when stdin is not a TTY), and `--help` (prints usage including the exit-code contract). The previous interactive prompt silently defaulted to N when stdin was redirected, which made non-interactive use a no-op; the new TTY guard refuses to proceed without `--yes` and prints an actionable hint instead.
+
+### Changed
+
+- **cron delegates OAuth refresh to `ensureFreshAuth`** — `runCron()` no longer calls `oauthRefresh()` directly. It invokes the shared `ensureFreshAuth({ refreshWindowMs })` primitive with a wider 6-hour cron window so scheduled ticks still bulk-refresh proactively. Refresh failures are now treated as non-fatal for the maintenance sweep — upstream drift detection, user-agent reconciliation, and `api-reference.json` regeneration continue even if the token endpoint is unreachable.
+- **`oauthRefresh` accepts a `silent` option** — Adds `oauthRefresh({ silent: true })` so non-interactive callers (ensure-fresh, future programmatic use) do not emit the `printResult` JSON summary on stdout. Default behavior unchanged for `clw-auth refresh`.
+- **`update` uses semver comparison and detects ahead/behind state** — Replaces string-equality tag comparison with numeric SemVer (via the existing `compareVersions` helper from `upstream.mjs`). This correctly orders `v1.10.0 > v1.2.0` and detects when the local install is ahead of the latest released tag (e.g. running `master`), reporting the ahead state instead of always prompting. When multiple releases are pending, `update` prints the full upgrade path (e.g. `v0.9.4 → v0.9.5 → v0.9.6`) so the operator can correlate with CHANGELOG entries before confirming.
+
+### Fixed
+
+- **README and command help reflect the new on-demand pattern** — Documents the `clw-auth ensure-fresh && curl ...` usage shape, adds `ensure-fresh.lock` to the data-dir table, and corrects the cron description to state that refresh is delegated and the refresh window equals the cron interval (was: "expires within 1 hour", which had been outdated since v0.9.5). Also documents the `version` subcommand and the new `update` flags.
+
 ## [0.9.5] - 2026-04-13
 
 ### Fixed
@@ -264,7 +283,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/4i3n6/clw-auth/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/4i3n6/clw-auth/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/4i3n6/clw-auth/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/4i3n6/clw-auth/compare/v0.9.2...v0.9.3
