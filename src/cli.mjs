@@ -126,7 +126,7 @@ const COMMAND_GROUPS = [
     title: 'Maintenance',
     commands: [
       {
-        usage: 'ensure-fresh',
+        usage: 'ensure-fresh [--silent|-q]',
         summary: 'Refresh OAuth on demand if it expires within 5 minutes (no-op otherwise).',
       },
       {
@@ -358,10 +358,11 @@ const COMMAND_HELP = new Map([
   [
     'ensure-fresh',
     {
-      usage: 'ensure-fresh',
-      description: 'On-demand OAuth refresh. No-op if the token is fresh (more than 5 minutes from expiry) or auth uses an API key. When refresh is needed, acquires a short-lived file lock so concurrent callers serialize, refreshes the token, and regenerates api-reference.json plus configured exporters. Designed to be called immediately before any outbound request — e.g. `clw-auth ensure-fresh && curl ...`. Exits non-zero on failure.',
+      usage: 'ensure-fresh [--silent|-q]',
+      description: 'On-demand OAuth refresh. No-op if the token is fresh (more than 5 minutes from expiry) or auth uses an API key. When refresh is needed, acquires a short-lived file lock so concurrent callers serialize, refreshes the token, and regenerates api-reference.json plus configured exporters. Designed to be called immediately before any outbound request — e.g. `clw-auth ensure-fresh && curl ...`. Exits non-zero on failure. --silent suppresses status output (exit code is the only signal); useful for plugins that delegate refresh to the CLI.',
       examples: [
         'clw-auth ensure-fresh',
+        'clw-auth ensure-fresh --silent',
         'clw-auth ensure-fresh && curl -sSf "$ENDPOINT" -H "Authorization: $AUTH"',
       ],
     },
@@ -780,8 +781,20 @@ const runCommand = async (command, args) => {
       return;
     }
     case 'ensure-fresh': {
+      const silent = args.includes('--silent') || args.includes('-q');
       const { ensureFreshAuth } = await loadCronModule();
       const result = await ensureFreshAuth();
+
+      if (silent) {
+        // --silent suppresses status output. Exit code remains the only signal:
+        // 0 on fresh / refreshed / skipped-api-key, 1 on skipped-not-configured.
+        // Useful for plugins that delegate to `clw-auth ensure-fresh` and
+        // surface their own diagnostics from result.json instead of stdout.
+        if (result.status === 'skipped-not-configured') {
+          process.exit(1);
+        }
+        return;
+      }
 
       switch (result.status) {
         case 'refreshed': {
