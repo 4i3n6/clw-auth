@@ -125,6 +125,10 @@ const COMMAND_GROUPS = [
     title: 'Maintenance',
     commands: [
       {
+        usage: 'ensure-fresh',
+        summary: 'Refresh OAuth on demand if it expires within 5 minutes (no-op otherwise).',
+      },
+      {
         usage: 'cron-install',
         summary: 'Install cron job for automatic OAuth token renewal.',
       },
@@ -331,6 +335,17 @@ const COMMAND_HELP = new Map([
         'clw-auth export openclaw',
         'clw-auth export openclaw --agent default',
         'clw-auth export openclaw --all-configured',
+      ],
+    },
+  ],
+  [
+    'ensure-fresh',
+    {
+      usage: 'ensure-fresh',
+      description: 'On-demand OAuth refresh. No-op if the token is fresh (more than 5 minutes from expiry) or auth uses an API key. When refresh is needed, acquires a short-lived file lock so concurrent callers serialize, refreshes the token, and regenerates api-reference.json plus configured exporters. Designed to be called immediately before any outbound request — e.g. `clw-auth ensure-fresh && curl ...`. Exits non-zero on failure.',
+      examples: [
+        'clw-auth ensure-fresh',
+        'clw-auth ensure-fresh && curl -sSf "$ENDPOINT" -H "Authorization: $AUTH"',
       ],
     },
   ],
@@ -745,6 +760,44 @@ const runCommand = async (command, args) => {
 
       const { system, options } = parseExportArgs(args);
       await runExporter(system, options);
+      return;
+    }
+    case 'ensure-fresh': {
+      const { ensureFreshAuth } = await loadCronModule();
+      const result = await ensureFreshAuth();
+
+      switch (result.status) {
+        case 'refreshed': {
+          const expiresAt = Number.isFinite(result.expires)
+            ? new Date(result.expires).toISOString()
+            : '(unknown)';
+          console.log(`Auth refreshed (expires ${expiresAt})`);
+          break;
+        }
+        case 'fresh': {
+          const expiresAt = Number.isFinite(result.expires)
+            ? new Date(result.expires).toISOString()
+            : '(unknown)';
+          console.log(`Auth fresh (expires ${expiresAt})`);
+          break;
+        }
+        case 'fresh-by-other': {
+          const expiresAt = Number.isFinite(result.expires)
+            ? new Date(result.expires).toISOString()
+            : '(unknown)';
+          console.log(`Auth fresh after concurrent refresh (expires ${expiresAt})`);
+          break;
+        }
+        case 'skipped-api-key':
+          console.log('Auth using API key (no refresh needed)');
+          break;
+        case 'skipped-not-configured':
+          console.error('Auth not configured. Run: clw-auth oauth-url');
+          process.exit(1);
+          break;
+        default:
+          console.log(`Auth status: ${result.status}`);
+      }
       return;
     }
     case 'cron-install': {
