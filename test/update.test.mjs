@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { compareTags, parseUpdateArgs } from '../src/update.mjs';
+import { compareTags, parseUpdateArgs, selectExportersToReapply } from '../src/update.mjs';
 
 describe('compareTags', () => {
   it('treats v-prefixed and bare tags as equal', () => {
@@ -61,5 +61,47 @@ describe('parseUpdateArgs', () => {
       () => parseUpdateArgs(['--check', '--yes']),
       /--check and --yes cannot be used together/,
     );
+  });
+});
+
+describe('selectExportersToReapply', () => {
+  it('returns an empty array for a non-array input', () => {
+    assert.deepEqual(selectExportersToReapply(null), []);
+    assert.deepEqual(selectExportersToReapply(undefined), []);
+    assert.deepEqual(selectExportersToReapply('string'), []);
+  });
+
+  it('selects outdated and unknown statuses', () => {
+    const results = [
+      { name: 'opencode', status: 'outdated', installedClwVersion: '0.9.6', currentClwVersion: '0.9.7' },
+      { name: 'openclaw', status: 'configured', configuredAgents: ['default'] },
+      { name: 'legacy', status: 'unknown' },
+    ];
+    const selected = selectExportersToReapply(results);
+    assert.equal(selected.length, 2);
+    assert.deepEqual(selected.map((s) => s.name).sort(), ['legacy', 'opencode']);
+  });
+
+  it('does not select up-to-date, ahead, not-installed, configured, not-configured, or error', () => {
+    const results = [
+      { name: 'a', status: 'up-to-date' },
+      { name: 'b', status: 'ahead' },
+      { name: 'c', status: 'not-installed' },
+      { name: 'd', status: 'configured' },
+      { name: 'e', status: 'not-configured' },
+      { name: 'f', status: 'error', error: 'boom' },
+    ];
+    assert.deepEqual(selectExportersToReapply(results), []);
+  });
+
+  it('ignores null/undefined entries safely', () => {
+    const results = [
+      { name: 'opencode', status: 'outdated' },
+      null,
+      { name: 'openclaw', status: 'unknown' },
+      undefined,
+    ];
+    const selected = selectExportersToReapply(results);
+    assert.equal(selected.length, 2);
   });
 });
