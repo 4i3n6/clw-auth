@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-05-02
+
+### Added
+
+- **per-exporter plugin freshness contract (`clw-auth version`, `clw-auth update`)** — Every exporter-generated artifact now embeds a `// clw-auth-plugin-meta:` header on its first line with the exporter name, the clw-auth version that generated it, and a generation timestamp. `clw-auth version` reports exporter freshness alongside the existing version snapshot: `up-to-date`, `outdated`, `ahead` (operator downgrade), `unknown` (pre-v0.9.7 install), `not-installed`, `configured`/`not-configured` (OpenClaw), or `error`. `clw-auth update` automatically reapplies exporters whose status is `outdated` or `unknown` after the upgrade completes, so users no longer need to remember to run `clw-auth export opencode` manually after updating clw-auth itself. Adds `parsePluginMeta()`, `inspectInstall()` to the OpenCode exporter, `inspectInstall()` to the OpenClaw exporter, and a registry-level `inspectExporters()` aggregator in `src/exporters/index.mjs`.
+- **hybrid OAuth refresh delegation in the OpenCode plugin** — The generated Anthropic auth plugin now attempts to delegate token refresh to `clw-auth ensure-fresh --silent` before falling back to its own inline refresh logic. This eliminates the race condition where Anthropic's rotating refresh token is invalidated by concurrent refreshes from the plugin and from cron or another `ensure-fresh` caller. The plugin spawns `clw-auth ensure-fresh --silent` with a 10-second watchdog timer (unref-ed so it never hangs the process) and suppresses stdout/stderr; on success it reloads credentials from `auth.json`. On spawn error, non-zero exit, timeout, or any exception, it falls through to the existing inline `refreshOauthCredential` path with the `inflightRefresh` in-process serializer preserved. Adds `--silent` / `-q` flag to the `ensure-fresh` CLI command so delegated callers do not pollute stdout.
+- **`selectExportersToReapply()` and `reapplyExporters()` helpers** — Pure filtering and runner functions in `src/update.mjs` with per-exporter error isolation (one broken exporter does not leave the others stale) and stdout silencing during exporter runs so the update log stays focused.
+- **`formatExporterLine()` and `collectExporters()` in `src/version.mjs`** — Pure formatting helpers for the new exporters section, with graceful degradation when introspection fails.
+
+### Changed
+
+- **`clw-auth update --check` exit code now considers exporter freshness** — Exit code 10 (update available) is now raised when either a clw-auth tag update is pending OR any exporter is `outdated`/`unknown`. This makes shell prompts and CI gates catch stale plugin installs even when clw-auth itself is already on the latest tag.
+- **`--silent` on `ensure-fresh`** — Adds `--silent` / `-q` flag to `clw-auth ensure-fresh` that suppresses all stdout/stderr while preserving the exit-code contract (0 on fresh/refreshed/fresh-by-other/skipped-api-key, 1 on skipped-not-configured). Used by the OpenCode plugin's hybrid refresh delegation.
+
+### Fixed
+
+- **README documents the new exporter freshness and hybrid refresh features** — Updates the Exporters section to explain plugin-meta headers, automatic reapply on `update`, and the `ensure-fresh --silent` delegation pattern.
+
 ## [0.9.6] - 2026-04-13
 
 ### Added
@@ -283,7 +301,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.6...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.7...HEAD
+[0.9.7]: https://github.com/4i3n6/clw-auth/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/4i3n6/clw-auth/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/4i3n6/clw-auth/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/4i3n6/clw-auth/compare/v0.9.3...v0.9.4
