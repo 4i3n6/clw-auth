@@ -1,6 +1,6 @@
 {
   "name": "clw-auth",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "description": "Standalone Anthropic OAuth credential manager",
   "type": "module",
   "private": false,
@@ -18,7 +18,7 @@
     "cron-run": "node src/cli.mjs cron-run",
     "setup-cron": "node scripts/setup-cron.mjs",
     "auth-setup": "node scripts/auth-tui.mjs",
-    "test": "node --test test/store.test.mjs test/auth.test.mjs test/cron.test.mjs test/ensure-fresh.test.mjs test/openclaw.test.mjs test/release.test.mjs test/update.test.mjs test/version.test.mjs",
+    "test": "node --test test/store.test.mjs test/auth.test.mjs test/cron.test.mjs test/ensure-fresh.test.mjs test/openclaw.test.mjs test/release.test.mjs test/update.test.mjs test/version.test.mjs test/exporters-inspect.test.mjs",
     "release": "node scripts/release.mjs"
   },
   "engines": {
