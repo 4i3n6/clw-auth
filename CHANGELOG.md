@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-05-07
+
+### Fixed
+
+- **parse OpenCode JSON configs with JSONC tolerance** — The OpenCode exporter now reads `opencode.json` with the same JSONC-tolerant parser already used for `opencode.jsonc`, allowing trailing commas and comments in real-world OpenCode configs instead of failing with a strict `JSON.parse()` error. Adds regression coverage for `.json` files containing JSONC-style trailing commas.
+
 ## [0.9.7] - 2026-05-02
 
 ### Added
@@ -301,7 +307,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Zero npm runtime dependencies — Node.js built-ins only.
 - MIT License.
 
-[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.7...HEAD
+[Unreleased]: https://github.com/4i3n6/clw-auth/compare/v0.9.8...HEAD
+[0.9.8]: https://github.com/4i3n6/clw-auth/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/4i3n6/clw-auth/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/4i3n6/clw-auth/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/4i3n6/clw-auth/compare/v0.9.4...v0.9.5
