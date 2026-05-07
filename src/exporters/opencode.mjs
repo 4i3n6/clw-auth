@@ -228,6 +228,10 @@ function resolveOpenCodeConfigPath() {
   return OPENCODE_CONFIG_PATH;
 }
 
+export function readOpenCodeConfigFile(filePath, fallbackValue = {}) {
+  return readJsoncFile(filePath, fallbackValue);
+}
+
 
 function writeTextAtomic(filePath, payload, mode = 0o600) {
   ensureParent(filePath);
@@ -406,8 +410,7 @@ function isPluginReferenceMatch(reference, fileName) {
 
 function patchOpenCodeConfig(pluginUri) {
   const configPath = resolveOpenCodeConfigPath();
-  const readConfig = configPath.endsWith('.jsonc') ? readJsoncFile : readJsonFile;
-  const currentConfig = readConfig(configPath, {});
+  const currentConfig = readOpenCodeConfigFile(configPath, {});
 
   if (!isPlainObject(currentConfig)) {
     throw new Error(`OpenCode config file must contain a JSON object: ${configPath}`);

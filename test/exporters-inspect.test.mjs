@@ -7,6 +7,7 @@ import { describe, it } from 'node:test';
 import {
   inspectInstall as inspectOpencode,
   parsePluginMeta,
+  readOpenCodeConfigFile,
 } from '../src/exporters/opencode.mjs';
 import {
   inspectInstall as inspectOpenclaw,
@@ -100,6 +101,22 @@ describe('inspectInstall (opencode)', () => {
       const result = inspectOpencode({ path: tmpFile, currentVersion: '0.9.7' });
       assert.equal(result.status, 'ahead');
       assert.equal(result.installedClwVersion, '0.9.8');
+    } finally {
+      unlinkSync(tmpFile);
+    }
+  });
+});
+
+describe('readOpenCodeConfigFile', () => {
+  it('parses opencode.json files that contain JSONC trailing commas', () => {
+    const tmpFile = join(tmpdir(), `clw-test-opencode-config-${Date.now()}.json`);
+    writeFileSync(tmpFile, '{\n  "mcp": {\n    "chrome": {\n      "enabled": false,\n    },\n  },\n  "plugin": ["oh-my-openagent@latest",],\n}\n');
+
+    try {
+      const config = readOpenCodeConfigFile(tmpFile, {});
+
+      assert.equal(config.mcp.chrome.enabled, false);
+      assert.deepEqual(config.plugin, ['oh-my-openagent@latest']);
     } finally {
       unlinkSync(tmpFile);
     }
